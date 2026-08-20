@@ -1,0 +1,53 @@
+{
+  "pages": [
+    {
+      "title": "Lúa",
+      "url": "https://wikicrop.example.org/wiki/Lúa",
+      "kind": "species",
+      "crop": "Lúa",
+      "page_id": 100,
+      "revision_id": 875,
+      "content_hash": "abababababababababababababababababababababababababababababababab",
+      "text": "Phân loại khoa học\nGiới (regnum)\nPlantae\nBộ (ordo)\nPoales\nHọ (familia)\nPoaceae\nChi (genus)\nOryza\nLoài (Species)\nOryza sativa\n\nLúa là cây lương thực quan trọng nhất của Việt Nam, được trồng chủ yếu ở đồng bằng sông Cửu Long và đồng bằng sông Hồng. Cây lúa ưa khí hậu nóng ẩm, cần nhiều nước trong giai đoạn làm đòng và trổ bông. Việt Nam là một trong những nước xuất khẩu gạo hàng đầu thế giới với nhiều giống lúa chất lượng cao.\n\nLúa thường bị rầy nâu và bệnh đạo ôn gây hại nặng trong vụ mùa. Người dân cần theo dõi đồng ruộng thường xuyên để phát hiện sớm và phòng trừ kịp thời."
+    },
+    {
+      "title": "Lúa_OM5451",
+      "url": "https://wikicrop.example.org/wiki/Lúa_OM5451",
+      "kind": "variety",
+      "crop": "Lúa",
+      "page_id": 101,
+      "revision_id": 534,
+      "content_hash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "text": "Giống lúa OM5451 được chọn tạo từ OM1490 và IR64 tại Viện lúa Đồng bằng sông Cửu Long. Giống có thời gian sinh trưởng 95-105 ngày, chiều cao cây 100-110 cm, năng suất 6-8 tấn/ha.\n\nOM5451 kháng bệnh đạo ôn và rầy nâu, nhiễm bệnh bạc lá nhẹ. Hạt gạo dài, cơm mềm dẻo, thơm nhẹ, chất lượng gạo tốt, được thị trường ưa chuộng."
+    },
+    {
+      "title": "Lúa_ST24",
+      "url": "https://wikicrop.example.org/wiki/Lúa_ST24",
+      "kind": "variety",
+      "crop": "Lúa",
+      "page_id": 102,
+      "revision_id": 536,
+      "content_hash": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+      "text": "Giống Lúa ST24 do Công ty Giống cây trồng miền Nam chọn tạo, thời gian sinh trưởng 100-110 ngày, chiều cao cây 95-105 cm, năng suất 7-9 tấn/ha. ST24 kháng bệnh khô vằn và đạo ôn. Gạo thơm nhẹ, cơm dẻo, hạt gạo trong, được đánh giá là giống lúa thơm ngon."
+    },
+    {
+      "title": "Lúa_ST25",
+      "url": "https://wikicrop.example.org/wiki/Lúa_ST25",
+      "kind": "variety",
+      "crop": "Lúa",
+      "page_id": 103,
+      "revision_id": 513,
+      "content_hash": "1212121212121212121212121212121212121212121212121212121212121212",
+      "text": "Giống Lúa ST25 là giống lúa gạo thơm đặc sản, thời gian sinh trưởng 100-110 ngày, chiều cao cây 95-105 cm, năng suất 6-7 tấn/ha. ST25 kháng bệnh đạo ôn, chịu mặn tốt, thích nghi với biến đổi khí hậu. Gạo ST25 đạt danh hiệu gạo ngon nhất thế giới năm 2019."
+    },
+    {
+      "title": "Kỹ_thuật_trồng_và_chăm_sóc_lúa",
+      "url": "https://wikicrop.example.org/wiki/Kỹ_thuật_trồng_và_chăm_sóc_lúa",
+      "crop": "Lúa",
+      "page_id": 104,
+      "revision_id": 221,
+      "content_hash": "3434343434343434343434343434343434343434343434343434343434343434",
+      "text": "Kỹ thuật trồng lúa: làm đất kỹ, bón lót phân chuồng trước khi cấy. Mật độ cấy 40-50 khóm/m2, mỗi khóm 2-3 dảnh. Bón thúc đạm vào giai đoạn đẻ nhánh, bón phân kali trước khi trổ. Quản lý nước theo phương pháp ngập khô xen kẽ, giúp lúa đẻ nhánh khỏe và hạn chế đổ ngã."
+    }
+  ]
+}

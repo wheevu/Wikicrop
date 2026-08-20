@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "extractor_version": "2.1.1",
+    "extraction_method": "rules",
+    "source_pages": [
+      {
+        "title": "Lúa",
+        "kind": "species",
+        "page_id": 62,
+        "revision_id": 875,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "title": "Lúa_OM5451",
+        "kind": "variety",
+        "crop": "Lúa",
+        "page_id": 63,
+        "revision_id": 534,
+        "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "warnings": []
+  },
+  "nodes": [
+    {
+      "id": "Lúa",
+      "label": "Lúa",
+      "type": "Crop",
+      "extra_labels": [],
+      "properties": {
+        "page_title": "Lúa"
+      }
+    },
+    {
+      "id": "OM5451",
+      "label": "OM5451",
+      "type": "Variety",
+      "extra_labels": ["LúaVariety"],
+      "properties": {
+        "page_title": "Lúa_OM5451",
+        "growth_duration": "95-105 ngày"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "Lúa",
+      "source_type": "Crop",
+      "type": "HAS_VARIETY",
+      "target": "OM5451",
+      "target_type": "Variety",
+      "properties": {}
+    }
+  ]
+}

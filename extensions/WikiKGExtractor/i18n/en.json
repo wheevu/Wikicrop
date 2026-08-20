@@ -1,0 +1,11 @@
+{
+  "@metadata": {
+    "authors": [
+      "WikiCrop project"
+    ]
+  },
+  "wikikgextractor": "Wiki extraction and KG builder",
+  "wikikgextractor-desc": "Discovers and extracts crop variety pages from broad pages in the current MediaWiki installation.",
+  "wikikgextractor-summary": "",
+  "wikikgextractor-permissiondenied": "You do not have permission to run this extractor."
+}

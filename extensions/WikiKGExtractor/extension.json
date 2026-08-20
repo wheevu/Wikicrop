@@ -1,0 +1,123 @@
+{
+  "name": "WikiKGExtractor",
+  "version": "2.1.1",
+  "author": [
+    "Mach Gia Han"
+  ],
+  "url": "https://www.mediawiki.org/wiki/Manual:Developing_extensions",
+  "descriptionmsg": "wikikgextractor-desc",
+  "license-name": "MIT",
+  "type": "specialpage",
+  "manifest_version": 2,
+  "requires": {
+    "MediaWiki": ">= 1.39.0",
+    "platform": {
+      "php": ">= 7.4"
+    }
+  },
+  "AutoloadNamespaces": {
+    "MediaWiki\\Extension\\WikiKGExtractor\\": "src/"
+  },
+  "SpecialPages": {
+    "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor"
+  },
+  "Hooks": {
+    "SkinBuildSidebar": "MediaWiki\\Extension\\WikiKGExtractor\\Hooks::onSkinBuildSidebar"
+  },
+  "MessagesDirs": {
+    "WikiKGExtractor": [
+      "i18n"
+    ]
+  },
+  "ResourceFileModulePaths": {
+    "localBasePath": "resources",
+    "remoteExtPath": "WikiKGExtractor/resources"
+  },
+  "ResourceModules": {
+    "ext.wikikg.styles": {
+      "styles": [
+        "wikikg.css"
+      ]
+    }
+  },
+  "AvailableRights": [
+    "wikikgextractor-run"
+  ],
+  "GroupPermissions": {
+    "user": {
+      "wikikgextractor-run": true
+    }
+  },
+  "config": {
+    "WikiKGExtractorLocalNamespaces": {
+      "value": [
+        0
+      ],
+      "description": "Namespace IDs read directly from the current wiki. Namespace 0 is normal content pages."
+    },
+    "WikiKGExtractorMaxSourcePages": {
+      "value": 20,
+      "description": "Hard maximum number of broad crop pages accepted per extraction."
+    },
+    "WikiKGExtractorMaxCollectedPages": {
+      "value": 100,
+      "description": "Hard maximum number of species and variety pages collected per extraction."
+    },
+    "WikiKGExtractorMaxPageChars": {
+      "value": 250000,
+      "description": "Hard maximum source wikitext size accepted for one page."
+    },
+    "WikiKGExtractorOutputDirectory": {
+      "value": "",
+      "description": "Export directory. Empty uses the OS temporary directory after checking it is outside the document root."
+    },
+    "WikiKGExtractorOutputBaseUrl": {
+      "value": "",
+      "description": "Optional public base URL. Empty keeps generated exports private."
+    },
+    "WikiKGExtractorEnableKG": {
+      "value": false,
+      "description": "Allow the Special page to invoke the Python KG worker."
+    },
+    "WikiKGExtractorPythonCommand": {
+      "value": "python3",
+      "description": "Python executable used for the KG worker."
+    },
+    "WikiKGExtractorGeminiApiKey": {
+      "value": "",
+      "description": "Gemini API key. Prefer getenv('GEMINI_API_KEY') in LocalSettings.php. Empty falls back to the rule-based extractor."
+    },
+    "WikiKGExtractorGeminiModel": {
+      "value": "gemini-2.5-flash",
+      "description": "Gemini model passed to the KG worker."
+    },
+    "WikiKGExtractorKgBatchSize": {
+      "value": 6,
+      "description": "Number of wiki pages sent to the model in one request."
+    },
+    "WikiKGExtractorKgTimeout": {
+      "value": 900,
+      "description": "Maximum KG worker runtime in seconds."
+    },
+    "WikiKGExtractorPushToNeo4j": {
+      "value": false,
+      "description": "Write the generated graph straight into Neo4j after each run."
+    },
+    "WikiKGExtractorNeo4jUri": {
+      "value": "bolt://localhost:7687",
+      "description": "Neo4j bolt URI."
+    },
+    "WikiKGExtractorNeo4jUser": {
+      "value": "neo4j",
+      "description": "Neo4j user name."
+    },
+    "WikiKGExtractorNeo4jPassword": {
+      "value": "",
+      "description": "Neo4j password. Prefer getenv('NEO4J_PASSWORD') in LocalSettings.php."
+    },
+    "WikiKGExtractorNeo4jDatabase": {
+      "value": "neo4j",
+      "description": "Neo4j database name."
+    }
+  }
+}

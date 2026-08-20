@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/graph-document.v1.schema.json",
+  "title": "WikiKGExtractor graph document",
+  "type": "object",
+  "required": ["schema_version", "metadata", "nodes", "edges"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["extractor_version", "extraction_method", "source_pages"],
+      "properties": {
+        "extractor_version": { "type": "string", "minLength": 1 },
+        "extraction_method": { "enum": ["rules", "ai"] },
+        "source_pages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourcePage" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    }
+  },
+  "$defs": {
+    "sourcePage": {
+      "type": "object",
+      "required": ["title", "kind", "page_id", "revision_id", "content_hash"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string" },
+        "kind": { "enum": ["species", "variety"] },
+        "crop": { "type": "string" },
+        "page_id": { "type": "integer", "minimum": 1 },
+        "revision_id": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": true
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "label", "type", "properties"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "extra_labels": { "type": "array", "items": { "type": "string" } },
+        "properties": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "edge": {
+      "type": "object",
+      "required": ["source", "source_type", "type", "target", "target_type", "properties"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "source_type": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "target_type": { "type": "string", "minLength": 1 },
+        "properties": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

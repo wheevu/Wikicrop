@@ -1,0 +1,11 @@
+{
+  "@metadata": {
+    "authors": [
+      "WikiCrop project"
+    ]
+  },
+  "wikikgextractor": "Special page title.",
+  "wikikgextractor-desc": "{{desc|name=WikiKGExtractor|url=https://www.mediawiki.org/wiki/Manual:Developing_extensions}}",
+  "wikikgextractor-summary": "Introductory text shown above the local wiki extraction form.",
+  "wikikgextractor-permissiondenied": "Permission error shown to users without the wikikgextractor-run right."
+}
