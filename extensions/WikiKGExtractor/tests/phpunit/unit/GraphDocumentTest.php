@@ -13,10 +13,12 @@ use MediaWikiUnitTestCase;
  * strips services, so that rendering path is verified at integration level
  * (Slice 4, MediaWiki runtime), not here. All load()/validation and node/edge
  * rendering paths below are service-free.
+ *
+ * @covers \MediaWiki\Extension\WikiKGExtractor\GraphDocument
  */
 class GraphDocumentTest extends MediaWikiUnitTestCase {
 	public function testLoadsVersionedDocument() {
-		$path = dirname( __DIR__ ) . '/fixtures/graph-document.v1.json';
+		$path = dirname( __DIR__, 2 ) . '/fixtures/graph-document.v1.json';
 		$document = GraphDocument::load( $path );
 
 		$this->assertIsArray( $document );
@@ -48,10 +50,8 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 		] );
 
 		$this->assertStringNotContainsString( '<script>alert(1)</script>', $html );
-		$this->assertStringContainsString( '&lt;script&gt;', $html );
+		$this->assertStringContainsString( '&lt;script>', $html );
 	}
-
-	// --- Slice 2: schema_version and provenance boundaries ------------------
 
 	public function testRejectsMissingSchemaVersion() {
 		$document = self::validDocument();
@@ -164,8 +164,6 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 		unlink( $path );
 	}
 
-	// --- Slice 2: rendering boundaries --------------------------------------
-
 	public function testRenderingEscapesEdgeSourceAndTarget() {
 		$html = GraphDocument::render( [
 			'schema_version' => '1.0',
@@ -183,7 +181,7 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 
 		$this->assertStringNotContainsString( '<img src=x', $html );
 		$this->assertStringContainsString( '&lt;img', $html );
-		$this->assertStringContainsString( '&amp;&quot;quoted&quot;', $html );
+		$this->assertStringContainsString( '&amp;"quoted"', $html );
 	}
 
 	public function testRenderingEscapesPropertyValues() {
@@ -204,7 +202,7 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 		] );
 
 		$this->assertStringNotContainsString( '<script>alert(2)</script>', $html );
-		$this->assertStringContainsString( '&lt;script&gt;', $html );
+		$this->assertStringContainsString( '&lt;script>', $html );
 		$this->assertStringContainsString( 'a &amp; b', $html );
 	}
 

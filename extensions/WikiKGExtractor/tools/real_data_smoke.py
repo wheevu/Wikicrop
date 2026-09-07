@@ -149,7 +149,6 @@ def extract_pages(dump_path: Path) -> list[dict]:
                 continue
             create = re.match(r"^CREATE TABLE `([^`]+)`", line)
             if create:
-                current_table = create.group(1)
                 continue
             if line.startswith("INSERT INTO"):
                 if pending_statement:
@@ -348,6 +347,44 @@ def main() -> int:
     if dangling:
         print("[smoke] Phát hiện cạnh mồ côi:", dangling, file=sys.stderr)
         return 5
+
+    source_titles = {page["title"] for page in doc["metadata"]["source_pages"]}
+    excluded_title = "Kỹ thuật trồng và chăm sóc lúa"
+    if excluded_title in source_titles:
+        print("[smoke] Trang kỹ thuật vẫn bị nhận nhầm là nguồn graph", file=sys.stderr)
+        return 6
+    variety_ids = {
+        node["id"] for node in doc["nodes"] if node["type"] == "Variety"
+    }
+    if variety_ids != {"OM5451", "ST24", "ST25"}:
+        print(f"[smoke] Danh sách giống không đúng: {sorted(variety_ids)}", file=sys.stderr)
+        return 6
+
+    crop = next(
+        (node for node in doc["nodes"] if node["type"] == "Crop" and node["id"] == "Lúa"),
+        None,
+    )
+    expected_taxonomy = {
+        "kingdom": "Plantae",
+        "taxon_order": "Poales",
+        "family": "Poaceae",
+        "genus": "Oryza",
+    }
+    if crop is None or any(
+        crop["properties"].get(key) != value
+        for key, value in expected_taxonomy.items()
+    ):
+        print("[smoke] Phân loại khoa học của Lúa chưa đúng", file=sys.stderr)
+        return 6
+
+    om5451 = next(
+        (node for node in doc["nodes"] if node["type"] == "Variety" and node["id"] == "OM5451"),
+        None,
+    )
+    if om5451 is None or om5451["properties"].get("crossbred_from") != "Jasmine 85 / OM2490":
+        print("[smoke] Nguồn lai của OM5451 chưa đúng", file=sys.stderr)
+        return 6
+    print("[smoke] Loại trang, taxonomy và nguồn lai: OK")
 
     try:
         import jsonschema  # noqa: F401

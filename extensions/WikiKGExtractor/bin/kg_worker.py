@@ -234,6 +234,7 @@ EMPTY_VALUES = {
     "khong ro",
     "khong co",
     "n/a",
+    "n a",
     "na",
     "null",
     "none",
@@ -269,6 +270,28 @@ def clean_value(value: Any) -> str:
     if norm_key(text) in EMPTY_VALUES:
         return ""
     return text
+
+
+def infer_page_kind(title: str, crop: str, raw_kind: Any) -> str:
+    """Infer old raw-data page kinds without treating arbitrary pages as varieties."""
+    kind = str(raw_kind or "").strip().lower()
+    if kind in ("species", "variety"):
+        return kind
+
+    title_key = norm_key(title)
+    crop_key = norm_key(crop)
+    if crop_key and title_key == crop_key:
+        return "species"
+    if crop_key and any(
+        title_key.startswith(prefix)
+        for prefix in (
+            f"{crop_key} ",
+            f"giong {crop_key} ",
+            f"cay {crop_key} ",
+        )
+    ):
+        return "variety"
+    return ""
 
 
 def label_suffix(crop_name: str) -> str:
@@ -372,7 +395,10 @@ def as_pest_list(value: Any) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def load_pages(input_path: Path) -> list[dict[str, Any]]:
+def load_pages(
+    input_path: Path,
+    skipped_titles: list[str] | None = None,
+) -> list[dict[str, Any]]:
     with input_path.open("r", encoding="utf-8") as file:
         data = json.load(file)
 
@@ -383,14 +409,17 @@ def load_pages(input_path: Path) -> list[dict[str, Any]]:
         text = str(page.get("text", "")).strip()
         if not text:
             continue
-        kind = str(page.get("kind", "")).strip().lower()
         crop = clean_value(page.get("crop"))
         if not crop:
             sources = page.get("source_pages") or []
             crop = clean_value(sources[0]) if sources else ""
-        if kind not in ("species", "variety"):
-            # Tương thích ngược với raw_data.json cũ (không có trường kind).
-            kind = "species" if crop and norm_key(crop) == norm_key(title) else "variety"
+        kind = infer_page_kind(title, crop, page.get("kind"))
+        if not kind:
+            # Dữ liệu cũ không khai báo loại trang chỉ được giữ khi tiêu đề đủ
+            # để nhận diện an toàn. Không biến trang kỹ thuật thành giống cây.
+            if skipped_titles is not None and title:
+                skipped_titles.append(title)
+            continue
         if not crop:
             crop = title if kind == "species" else ""
         result.append(
@@ -437,7 +466,7 @@ def clean_model_json(text: str) -> Any:
 
 HEURISTIC_FIELDS = {
     "growth_duration": r"th[ờo]i gian sinh tr[ưu][ởo]ng",
-    "plant_height": r"chi[ềe]u cao (?:c[âa]y|trung b[ìi]nh)?",
+    "plant_height": r"(?:chi[ềe]u cao (?:c[âa]y|trung b[ìi]nh)?|cao c[âa]y)",
     "yield_amount": r"n[ăa]ng su[ấa]t",
     "variety_type": r"lo[ạa]i gi[ốo]ng",
 }
@@ -454,7 +483,7 @@ CONDENSE_PATTERNS = {
 # tên viện nghiên cứu ở nhãn "Xuất xứ"/"Nguồn gốc".
 CROSSBRED_PATTERNS = (
     r"t[ổo] h[ợo]p lai\s*[:\-–—]?\s*([^\n.;()]{3,120})",
-    r"lai (?:t[ạa]o\s+)?(?:t[ừu]|gi[ữu]a)\s+([^\n.;()]{3,120})",
+    r"lai (?:t[ạa]o\s+)?(?:t[ừu]|gi[ữu]a)\s+(?:\d+\s+gi[ốo]ng(?:\s+l[úu]a)?\s+)?([^\n.;()]{3,120})",
     r"ch[ọo]n (?:l[ọo]c|t[ạa]o)\s+t[ừu]\s+([^\n.;()]{3,120})",
 )
 
@@ -482,6 +511,41 @@ HEURISTIC_TAXONOMY = {
     "family": r"H[ọo]\s*\(familia\)",
     "genus": r"Chi\s*\(genus\)",
 }
+
+WIKITEXT_TAXONOMY = {
+    "gioi": "kingdom",
+    "bo": "taxon_order",
+    "ho": "family",
+    "chi": "genus",
+    "tenloai": "scientific_name",
+}
+
+
+def extract_wikitext_taxonomy(text: str) -> dict[str, str]:
+    """Read taxonomy fields from WikiCrop's InfoPlant templates."""
+    match = re.search(
+        r"\{\{\s*(?:InfoPlant1|InfoCropPlant)\b(.*?)\}\}",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return {}
+
+    taxonomy: dict[str, str] = {}
+    for parameter in re.finditer(
+        r"\|\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*?)"
+        r"(?=\|\s*[A-Za-z][A-Za-z0-9_]*\s*=|\Z)",
+        match.group(1),
+        flags=re.DOTALL,
+    ):
+        key = WIKITEXT_TAXONOMY.get(norm_key(parameter.group(1)).replace(" ", ""))
+        if not key:
+            continue
+        value = re.sub(r"<[^>]+>", " ", parameter.group(2))
+        value = clean_value(value.replace("''", ""))
+        if value:
+            taxonomy[key] = value
+    return taxonomy
 
 
 def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
@@ -520,13 +584,15 @@ def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
         # Cắt phần đuôi nói về nơi/năm lai tạo, chỉ giữ tên giống bố/mẹ.
         value = clean_value(
             re.split(
-                r"\s+(?:t[ạa]i|do|c[ủu]a|n[ăa]m|b[ởo]i)\s+",
+                r"\s+(?:t[ạa]i|do|c[ủu]a|n[ăa]m|b[ởo]i|c[óo]\s+"
+                r"(?:[đd][ặa]c\s+t[íi]nh|[đd][ặa]c\s+[đd]i[ểe]m))\s+",
                 match.group(1),
                 maxsplit=1,
                 flags=re.IGNORECASE,
             )[0]
         )
         if value and norm_key(value) not in INFOBOX_LABELS:
+            value = re.sub(r"\s+v[àa]\s+", " / ", value, flags=re.IGNORECASE)
             properties["crossbred_from"] = value[:200]
             break
 
@@ -540,8 +606,18 @@ def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
             value = clean_value(match.group(1))
             if value and not value.lower().startswith("(không phân hạng"):
                 taxonomy[key] = value
+    if page["kind"] == "species":
+        for key, value in extract_wikitext_taxonomy(text).items():
+            taxonomy.setdefault(key, value)
 
-    paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) > 80]
+    paragraphs = [
+        p.strip()
+        for p in text.split("\n")
+        if len(p.strip()) > 80
+        and "{{" not in p
+        and "}}" not in p
+        and not p.lstrip().startswith(("|", "<span", "[[File:"))
+    ]
     if paragraphs:
         properties["text_embed"] = " ".join(paragraphs[:2])[:900]
 
@@ -1488,7 +1564,8 @@ def main() -> int:
         print(f"Không tìm thấy file đầu vào: {input_path}", file=sys.stderr)
         return 2
 
-    pages = load_pages(input_path)
+    skipped_titles: list[str] = []
+    pages = load_pages(input_path, skipped_titles)
     if not pages:
         print("Không có trang nào có nội dung trong file đầu vào.", file=sys.stderr)
         return 3
@@ -1508,7 +1585,12 @@ def main() -> int:
     )
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    warnings: list[str] = []
+    warnings = [
+        f"Bỏ qua trang không xác định an toàn là loài hoặc giống: “{title}”."
+        for title in skipped_titles
+    ]
+    for warning in warnings:
+        print(f"[kg] {warning}", file=sys.stderr, flush=True)
 
     # Trang loài đứng trước để AI có ngữ cảnh loài trong batch đầu tiên.
     ordered_pages = species_pages + variety_pages

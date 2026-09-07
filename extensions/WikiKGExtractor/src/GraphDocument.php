@@ -34,28 +34,20 @@ class GraphDocument {
 		}
 
 		$document = json_decode( $raw, true );
-        if ( !is_array( $document )
-            || (string)( $document['schema_version'] ?? '' ) !== self::SCHEMA_VERSION
-            || !is_array( $document['nodes'] ?? null )
-            || !is_array( $document['edges'] ?? null )
-        ) {
+		if ( !is_array( $document )
+			|| ( $document['schema_version'] ?? null ) !== self::SCHEMA_VERSION
+			|| !is_array( $document['nodes'] ?? null )
+			|| !is_array( $document['edges'] ?? null )
+		) {
 			return null;
 		}
-        if ( isset( $document['schema_version'] )
-            && (string)$document['schema_version'] !== self::SCHEMA_VERSION
-        ) {
-            return null;
-        }
 
-        if ( !self::hasValidMetadata( $document['metadata'] ?? null ) ) {
-            return null;
-        }
+		if ( !self::hasValidMetadata( $document['metadata'] ?? null ) ) {
+			return null;
+		}
 
-        $document['metadata'] = $document['metadata'];
-        $document['schema_version'] = (string)$document['schema_version'];
-
-        return $document;
-    }
+		return $document;
+	}
 
 	/**
 	 * @param mixed $metadata
@@ -185,7 +177,6 @@ class GraphDocument {
 					)
 				)
 				. Html::rawElement( 'tbody', [], $edgeRows )
-			)
 		);
 
 		return Html::rawElement(
@@ -263,7 +254,6 @@ class GraphDocument {
 					)
 				)
 				. Html::rawElement( 'tbody', [], $rows )
-			)
 		);
 	}
 

@@ -347,6 +347,11 @@ wfLoadExtension( 'ApiPlantDB' );
 // wfLoadExtension( 'MicrosoftClarity' );
 // $wgMicrosoftClarityID = 'YOUR_CLARITY_ID'; // Thay thế bằng Clarity ID
 
+// Thesis graph integration is intentionally opt-in.
+// wfLoadExtension( 'WikiKGExtractor' );
+// $wgWikiKGExtractorEnableKG = false;
+// $wgWikiKGExtractorPushToNeo4j = false;
+
 wfLoadExtension( 'NongNghiep40' );
 wfLoadExtension( 'QuanLyNongNghiep40' );
 $wgQuanLyNongNghiep40GeminiKey = 'GEMINI_API_KEY'; // Thay thế bằng Gemini Key của bạn

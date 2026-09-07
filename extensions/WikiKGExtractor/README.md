@@ -272,6 +272,10 @@ The first graph document uses schema version `1.0` and is validated against `sch
 
 The `Special:WikiKGExtractor` result page renders a read-only semantic graph view from `graph_nodes_edges.json`.
 
+Older `raw_data.json` files without a `kind` field are accepted only when the title identifies a species or variety safely.
+
+Unrelated pages are skipped with a warning instead of being treated as varieties.
+
 Collection and page-size limits are enabled by default through `WikiKGExtractorMaxCollectedPages` and `WikiKGExtractorMaxPageChars`.
 
 The in-Wiki renderer also caps the number of displayed nodes and relationships while preserving the complete JSON export for offline analysis.

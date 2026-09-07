@@ -135,11 +135,8 @@ class TestStringHelpers(unittest.TestCase):
         self.assertEqual(kg_worker.norm_key("  Bệnh đạo ôn  "), "benh dao on")
 
     def test_clean_value_unknown(self) -> None:
-        for value in ("Chưa rõ", "không rõ", "-", None):
+        for value in ("Chưa rõ", "không rõ", "N/A", "-", None):
             self.assertEqual(kg_worker.clean_value(value), "", msg=repr(value))
-        # N/A bị giữ nguyên: norm_key('N/A') = 'n a' không khớp mục 'na'/'n/a'
-        # trong EMPTY_VALUES. Hành vi hiện tại, ghi nhận để báo cáo sau.
-        self.assertEqual(kg_worker.clean_value("N/A"), "N/A")
 
     def test_clean_value_keeps_text(self) -> None:
         self.assertEqual(kg_worker.clean_value(" 95-105 ngày "), "95-105 ngày")
@@ -165,7 +162,7 @@ class TestLoadPages(unittest.TestCase):
         self.pages = kg_worker.load_pages(RAW_DATA_RULES)
 
     def test_all_pages_loaded(self) -> None:
-        self.assertEqual(len(self.pages), 5)
+        self.assertEqual(len(self.pages), 4)
 
     def test_provenance_preserved(self) -> None:
         lua = next(p for p in self.pages if p["title"] == "Lúa")
@@ -173,10 +170,32 @@ class TestLoadPages(unittest.TestCase):
         self.assertEqual(lua["revision_id"], 875)
         self.assertEqual(lua["content_hash"], HASH_LUA)
 
-    def test_kind_fallback_for_page_without_kind(self) -> None:
-        technique = next(p for p in self.pages if "Kỹ_thuật" in p["title"])
-        # Trang không khai báo kind và tiêu đề khác loài -> quy về giống.
-        self.assertEqual(technique["kind"], "variety")
+    def test_page_without_safe_kind_is_excluded(self) -> None:
+        self.assertNotIn(
+            "Kỹ_thuật_trồng_và_chăm_sóc_lúa",
+            {page["title"] for page in self.pages},
+        )
+
+    def test_excluded_page_title_is_reported(self) -> None:
+        skipped: list[str] = []
+        kg_worker.load_pages(RAW_DATA_RULES, skipped)
+        self.assertEqual(skipped, ["Kỹ_thuật_trồng_và_chăm_sóc_lúa"])
+
+    def test_legacy_variety_kind_inferred_from_title(self) -> None:
+        data = {
+            "pages": [
+                {
+                    "title": "Lúa_OM5451",
+                    "crop": "Lúa",
+                    "text": "Nội dung trang.",
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "raw.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            pages = kg_worker.load_pages(path)
+        self.assertEqual(pages[0]["kind"], "variety")
 
     def test_kind_inferred_for_species_like_title(self) -> None:
         data = {
@@ -200,8 +219,13 @@ class TestLoadPages(unittest.TestCase):
     def test_empty_text_pages_skipped(self) -> None:
         data = {
             "pages": [
-                {"title": "A", "text": "  ", "crop": "Lúa"},
-                {"title": "B", "text": "Nội dung.", "crop": "Lúa"},
+                {"title": "A", "text": "  ", "crop": "Lúa", "kind": "variety"},
+                {
+                    "title": "B",
+                    "text": "Nội dung.",
+                    "crop": "Lúa",
+                    "kind": "variety",
+                },
             ]
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,9 +253,7 @@ class TestHeuristicEntity(unittest.TestCase):
 
     def test_variety_crossbred_from(self) -> None:
         entity = self._entity("Lúa_OM5451")
-        # Heuristic giữ nguyên ' và ' (bước chuẩn hóa ' / ' chỉ áp dụng cho
-        # đường AI); đây là hành vi hiện tại, chưa phải lỗi thuộc phạm vi này.
-        self.assertEqual(entity["properties"]["crossbred_from"], "OM1490 và IR64")
+        self.assertEqual(entity["properties"]["crossbred_from"], "OM1490 / IR64")
 
     def test_variety_resistance_and_susceptibility(self) -> None:
         entity = self._entity("Lúa_OM5451")
@@ -249,6 +271,64 @@ class TestHeuristicEntity(unittest.TestCase):
         self.assertEqual(entity["taxonomy"]["scientific_name"], "Oryza sativa")
         self.assertEqual(entity["taxonomy"]["genus"], "Oryza")
         self.assertEqual(entity["taxonomy"]["family"], "Poaceae")
+
+    def test_species_taxonomy_from_wikicrop_template(self) -> None:
+        page = {
+            "title": "Lúa",
+            "kind": "species",
+            "crop": "Lúa",
+            "text": (
+                "{{InfoPlant1\n | TenCayTrong = Lúa\n"
+                "|Gioi=Plantae|Bo=Poales|Ho=Poaceae|Chi=Oryza}}\n"
+                "Lúa là cây lương thực quan trọng của Việt Nam."
+            ),
+        }
+        taxonomy = kg_worker.heuristic_entity(page)["taxonomy"]
+        self.assertEqual(
+            taxonomy,
+            {
+                "kingdom": "Plantae",
+                "taxon_order": "Poales",
+                "family": "Poaceae",
+                "genus": "Oryza",
+            },
+        )
+
+    def test_variety_template_does_not_override_crop_taxonomy(self) -> None:
+        page = {
+            "title": "Lúa_OM5451",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": (
+                "{{InfoCropPlant|TenLoai=Oryza sativa|Bo=Poaceae|Ho=Poaceae}}\n"
+                "Giống lúa OM5451 có thời gian sinh trưởng 95-105 ngày."
+            ),
+        }
+        self.assertEqual(kg_worker.heuristic_entity(page)["taxonomy"], {})
+
+    def test_cao_cay_height_label(self) -> None:
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": "Cao cây: 100-110 cm. Giống lúa X sinh trưởng ổn định.",
+        }
+        entity = kg_worker.heuristic_entity(page)
+        self.assertEqual(entity["properties"]["plant_height"], "100-110 cm")
+
+    def test_template_markup_excluded_from_embedding_text(self) -> None:
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": (
+                "{{InfoCropPlant|TenCayTrong=Giống Lúa X|TenLoai=Oryza sativa}}\n"
+                "Giống lúa X có hạt dài và chất lượng gạo tốt, phù hợp cho "
+                "nhiều điều kiện canh tác khác nhau tại Việt Nam."
+            ),
+        }
+        entity = kg_worker.heuristic_entity(page)
+        self.assertNotIn("InfoCropPlant", entity["properties"]["text_embed"])
 
     def test_species_pests_unclassified(self) -> None:
         entity = self._entity("Lúa")
@@ -269,12 +349,7 @@ class TestBuildGraph(unittest.TestCase):
             for node in graph.node_list()
             if node["label"] == "Variety"
         }
-        # Ba giống thật + trang kỹ thuật (bị quy về giống - hành vi hiện tại
-        # của nhánh tương thích ngược, cần báo cáo với giảng viên).
-        self.assertEqual(
-            variety_ids,
-            {"OM5451", "ST24", "ST25", "Kỹ thuật trồng và chăm sóc lúa"},
-        )
+        self.assertEqual(variety_ids, {"OM5451", "ST24", "ST25"})
         self.assertEqual(warnings, [])
 
         crop_node = next(
@@ -283,7 +358,7 @@ class TestBuildGraph(unittest.TestCase):
             if node["label"] == "Crop" and node["id"] == "Lúa"
         )
         self.assertEqual(crop_node["properties"]["scientific_name"], "Oryza sativa")
-        self.assertEqual(crop_node["properties"]["variety_count"], "4")
+        self.assertEqual(crop_node["properties"]["variety_count"], "3")
         self.assertEqual(crop_node["properties"]["pest_count"], "4")
 
         om5451 = next(
@@ -300,7 +375,7 @@ class TestBuildGraph(unittest.TestCase):
         affected_by = [
             edge for edge in graph.edge_list() if edge["type"] == "AFFECTED_BY"
         ]
-        self.assertEqual(len(has_variety), 4)
+        self.assertEqual(len(has_variety), 3)
         self.assertEqual(len(affected_by), 4)
         self.assertEqual(
             {edge["target"] for edge in affected_by},
@@ -572,7 +647,7 @@ class TestGraphDocument(unittest.TestCase):
         doc = self._document()
         self.assertEqual(doc["schema_version"], "1.0")
         self.assertEqual(doc["metadata"]["extraction_method"], "rules")
-        self.assertEqual(len(doc["metadata"]["source_pages"]), 5)
+        self.assertEqual(len(doc["metadata"]["source_pages"]), 4)
         self.assertEqual(doc["metadata"]["source_pages"][1]["page_id"], 101)
         self.assertEqual(
             doc["metadata"]["source_pages"][1]["content_hash"], HASH_OM5451
@@ -631,15 +706,17 @@ class TestWorkerIntegration(unittest.TestCase):
             # Khớp giữa tóm tắt và nội dung đồ thị.
             self.assertEqual(summary["node_count"], len(doc["nodes"]))
             self.assertEqual(summary["edge_count"], len(doc["edges"]))
-            self.assertEqual(summary["page_count"], 5)
+            self.assertEqual(summary["page_count"], 4)
             self.assertFalse(summary["neo4j_pushed"])
+            self.assertEqual(len(summary["warnings"]), 1)
+            self.assertIn("Kỹ_thuật", summary["warnings"][0])
 
             variety_ids = {
                 node["id"] for node in doc["nodes"] if node["type"] == "Variety"
             }
             self.assertEqual(
                 variety_ids,
-                {"OM5451", "ST24", "ST25", "Kỹ thuật trồng và chăm sóc lúa"},
+                {"OM5451", "ST24", "ST25"},
             )
 
     def test_output_validates_against_schema(self) -> None:
