@@ -46,6 +46,7 @@ class ExportWriter {
         } ) );
 
         $payload = [
+            'schema_version' => '1.0',
             'source_url' => $sourceUrl,
             'generated_at' => gmdate( 'c' ),
             'page_count' => count( $successful ),

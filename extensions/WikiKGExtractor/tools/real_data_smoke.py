@@ -125,14 +125,20 @@ def decode(value: str | int | None | bytes) -> str:
     return str(value)
 
 
-def extract_pages(dump_path: Path) -> list[dict]:
-    """Trích 5 trang mục tiêu từ dump (chỉ database mediawiki_new1)."""
+def extract_pages(
+    dump_path: Path,
+    target_pages: list[tuple[str, str | None, str]] | None = None,
+    *,
+    allow_missing: bool = False,
+) -> list[dict]:
+    """Trích các trang mục tiêu từ dump (chỉ database mediawiki_new1)."""
+    targets = TARGET_PAGES if target_pages is None else target_pages
     page_rows: dict[int, dict] = {}
     rev_page: dict[int, int] = {}
     slot_content: dict[int, int] = {}
     content_address: dict[int, str] = {}
     text_rows: dict[int, str] = {}
-    target_set = {title for title, _, _ in TARGET_PAGES}
+    target_set = {title for title, _, _ in targets}
 
     current_db = ""
     pending_statement = ""
@@ -225,9 +231,11 @@ def extract_pages(dump_path: Path) -> list[dict]:
                     text_rows[int(row[0])] = decode(row[1])
 
     result: list[dict] = []
-    for title, kind, crop in TARGET_PAGES:
+    for title, kind, crop in targets:
         matching = [pid for pid, row in page_rows.items() if row["title"] == title]
         if not matching:
+            if allow_missing:
+                continue
             raise RuntimeError(f"Không tìm thấy trang {title!r} trong dump")
         page_id = matching[0]
         latest = page_rows[page_id]["latest"]
@@ -243,8 +251,7 @@ def extract_pages(dump_path: Path) -> list[dict]:
         text = text_rows.get(old_id)
         if text is None:
             raise RuntimeError(f"Trang {title!r} thiếu nội dung (text id {old_id})")
-        text = text.strip()
-        if not text:
+        if not text.strip():
             raise RuntimeError(f"Trang {title!r} có nội dung rỗng")
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         page = {
@@ -255,6 +262,7 @@ def extract_pages(dump_path: Path) -> list[dict]:
             "page_id": page_id,
             "revision_id": latest,
             "content_hash": content_hash,
+            "wikitext": text,
             "text": text,
         }
         if kind is None:
@@ -297,7 +305,7 @@ def main() -> int:
         return 2
 
     pages = extract_pages(dump_path)
-    raw_data = {"pages": pages}
+    raw_data = {"schema_version": "1.0", "pages": pages}
 
     if args.output_dir:
         out_root = Path(args.output_dir).expanduser().resolve()
@@ -316,7 +324,8 @@ def main() -> int:
             f"len={len(page['text'])}"
         )
 
-    outputs = []
+    graph_outputs = []
+    claim_outputs = []
     for index, seed in enumerate(("1", "2")):
         run_dir = out_root / f"run-{index + 1}"
         env = dict(__import__("os").environ)
@@ -329,15 +338,25 @@ def main() -> int:
         if not graph_path.is_file():
             print(f"[smoke] Thiếu {graph_path}", file=sys.stderr)
             return 3
-        outputs.append(graph_path.read_bytes())
+        claims_path = run_dir / "candidate_claims.json"
+        if not claims_path.is_file():
+            print(f"[smoke] Thiếu {claims_path}", file=sys.stderr)
+            return 3
+        graph_outputs.append(graph_path.read_bytes())
+        claim_outputs.append(claims_path.read_bytes())
 
-    print("[smoke] Hai lần chạy byte-giống hệt nhau:", outputs[0] == outputs[1])
-    if outputs[0] != outputs[1]:
+    deterministic = (
+        graph_outputs[0] == graph_outputs[1]
+        and claim_outputs[0] == claim_outputs[1]
+    )
+    print("[smoke] Hai lần chạy byte-giống hệt nhau:", deterministic)
+    if not deterministic:
         print("[smoke] KHÔNG khớp: đầu ra không deterministic", file=sys.stderr)
         return 4
 
     import json as _json
-    doc = _json.loads(outputs[0].decode("utf-8"))
+    doc = _json.loads(graph_outputs[0].decode("utf-8"))
+    claim_doc = _json.loads(claim_outputs[0].decode("utf-8"))
     ids = {node["id"] for node in doc["nodes"]}
     dangling = [
         edge for edge in doc["edges"]
@@ -395,7 +414,15 @@ def main() -> int:
             (Path(__file__).resolve().parents[1] / "schema" / "graph-document.v1.schema.json").read_text(encoding="utf-8")
         )
         jsonschema.validate(doc, schema)
-        print("[smoke] Schema validation: OK")
+        raw_schema = _json.loads(
+            (Path(__file__).resolve().parents[1] / "schema" / "raw-data.v1.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(raw_data, raw_schema)
+        claim_schema = _json.loads(
+            (Path(__file__).resolve().parents[1] / "schema" / "candidate-claims.v1.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(claim_doc, claim_schema)
+        print("[smoke] Raw, graph và candidate-claim schema: OK")
 
     print(f"[smoke] Kết quả tại {out_root}")
     return 0

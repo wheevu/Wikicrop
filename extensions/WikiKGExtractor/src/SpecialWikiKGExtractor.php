@@ -363,6 +363,14 @@ class SpecialWikiKGExtractor extends SpecialPage {
         if ( $summary ) {
             $stats[] = [ 'Node', (int)( $summary['node_count'] ?? 0 ) ];
             $stats[] = [ 'Quan hệ', (int)( $summary['edge_count'] ?? 0 ) ];
+            $stats[] = [
+                'Claim chờ duyệt',
+                (int)( $summary['candidate_claim_count'] ?? 0 )
+            ];
+            $stats[] = [
+                'Đủ dữ liệu truy vết',
+                (int)( $summary['traceability_complete_count'] ?? 0 )
+            ];
         }
         $html .= $this->renderStatGrid( $stats );
 
@@ -386,9 +394,10 @@ class SpecialWikiKGExtractor extends SpecialPage {
                 $notes[] = 'Chạy ở chế độ không dùng AI (thiếu Gemini API key), '
                     . 'đồ thị sẽ thưa hơn.';
             }
+            $notes[] = 'Các claim mới đang chờ duyệt; chưa phải dữ liệu đã xác nhận.';
             $notes[] = !empty( $summary['neo4j_pushed'] )
                 ? 'Đã ghi thẳng vào Neo4j.'
-                : 'Chưa ghi vào Neo4j — dùng file neo4j_import.cypher để nạp.';
+                : 'Chưa ghi vào Neo4j. Dùng file neo4j_import.cypher để nạp.';
             foreach ( $notes as $note ) {
                 $html .= Html::element(
                     'p',
@@ -399,10 +408,19 @@ class SpecialWikiKGExtractor extends SpecialPage {
 
             $html .= $this->renderWarnings( $summary['warnings'] ?? [] );
 
-            $html .= GraphDocument::renderFile(
-                rtrim( (string)$outputDirectory, DIRECTORY_SEPARATOR )
-                    . DIRECTORY_SEPARATOR . 'graph_nodes_edges.json'
-            );
+            $graphPath = rtrim( (string)$outputDirectory, DIRECTORY_SEPARATOR )
+                . DIRECTORY_SEPARATOR . 'graph_nodes_edges.json';
+            $graphDocument = GraphDocument::load( $graphPath );
+            if ( $graphDocument !== null ) {
+                $this->getOutput()->addJsConfigVars(
+                    'wgWikiKGGraph',
+                    GraphDocument::clientData( $graphDocument )
+                );
+                $this->getOutput()->addModules( 'ext.wikikg.graph' );
+                $html .= GraphDocument::render( $graphDocument );
+            } else {
+                $html .= GraphDocument::renderFile( $graphPath );
+            }
         } elseif ( $kgResult !== null ) {
             $html .= Html::element(
                 'p',
@@ -536,6 +554,7 @@ class SpecialWikiKGExtractor extends SpecialPage {
                 'Dữ liệu gọn để vẽ đồ thị trên web.'
             ];
             $secondary[] = [ 'graph_data_raw.json', 'graph_data_raw.json' ];
+            $secondary[] = [ 'candidate_claims.json', 'candidate_claims.json' ];
             $secondary[] = [ 'kg_summary.json', 'kg_summary.json' ];
         }
 

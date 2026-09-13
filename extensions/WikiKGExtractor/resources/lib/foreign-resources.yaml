@@ -1,0 +1,11 @@
+cytoscape:
+  license: MIT
+  homepage: https://js.cytoscape.org/
+  authors: The Cytoscape Consortium
+  version: 3.34.3
+  type: tar
+  src: https://registry.npmjs.org/cytoscape/-/cytoscape-3.34.3.tgz
+  integrity: sha512-yfYGhRcGAntq6YBD583j4n0Eg3jIxvWmZtz/5uz9UYkeIStSlMxuUja+ec5j3iBD8nv1rwaOAYMW09tBdkSeaQ==
+  dest:
+    package/LICENSE: .
+    package/dist/cytoscape.umd.js: .

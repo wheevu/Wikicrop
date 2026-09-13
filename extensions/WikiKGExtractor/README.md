@@ -1,4 +1,4 @@
-# WikiKGExtractor 2.1.1
+# WikiKGExtractor 2.2.0
 
 **WikiKGExtractor** là tiện ích mở rộng (extension) cho MediaWiki, được xây dựng cho hệ thống **Wikicrop**. Extension cho phép nhập tên một loài cây, thu thập nội dung trang loài và các trang giống thuộc mục **Danh sách/Giống**, sau đó xuất dữ liệu và tùy chọn xây dựng **Knowledge Graph** để lưu trữ trên **Neo4j**.
 
@@ -11,12 +11,22 @@ Thư mục được đặt tại `extensions/WikiKGExtractor/`:
 ```text
 WikiKGExtractor/
 ├── extension.json
+├── WikiKGExtractor.alias.php
 ├── bin/
 │   ├── kg_worker.py
 │   └── requirements.txt
 ├── i18n/
 ├── resources/
-│   └── wikikg.css
+│   ├── lib/
+│   │   ├── cytoscape/
+│   │   └── foreign-resources.yaml
+│   ├── wikikg.css
+│   └── wikikg.graph.js
+├── schema/
+│   ├── candidate-claims.v1.schema.json
+│   ├── corpus-manifest.v1.schema.json
+│   ├── graph-document.v1.schema.json
+│   └── raw-data.v1.schema.json
 ├── src/
 │   ├── ExportWriter.php
 │   ├── Hooks.php
@@ -24,6 +34,10 @@ WikiKGExtractor/
 │   ├── LocalWikiExtractor.php
 │   ├── SpecialWikiKGExtractor.php
 │   └── GraphDocument.php
+├── tools/
+│   ├── real_data_smoke.py
+│   └── rice_corpus.py
+├── tests/
 └── README.md
 ```
 
@@ -159,6 +173,7 @@ Sau mỗi lần thực hiện, extension tạo một thư mục phiên xuất ch
 | `raw_data.txt`                            | Dữ liệu văn bản thu thập từ các trang Wiki             |
 | `raw_data.json`                           | Dữ liệu thu thập ở dạng JSON                           |
 | `graph_data_raw.json`                     | Dữ liệu thực thể và quan hệ được trích xuất            |
+| `candidate_claims.json`                   | Candidate claim đang chờ duyệt và evidence theo revision |
 | `graph_nodes_edges.json`                  | Danh sách node và edge của Knowledge Graph             |
 | `neo4j_import.cypher`                     | Script Cypher dùng để nhập dữ liệu vào Neo4j           |
 | `mediawiki_bang_thuoc_tinh_cay_trong.txt` | Bảng thông tin các giống ở dạng wikitext               |
@@ -268,7 +283,15 @@ Generated exports are written to the OS temporary directory after checking that 
 
 They are not exposed through a public URL unless an administrator explicitly configures `$wgWikiKGExtractorOutputBaseUrl`.
 
+New raw inputs use schema version `1.0` and preserve both exact `wikitext` and rendered `text`.
+
+The worker prefers `wikitext` for extraction and accepts older unversioned inputs through the legacy `text` field.
+
 The first graph document uses schema version `1.0` and is validated against `schema/graph-document.v1.schema.json`.
+
+Candidate claims use `schema/candidate-claims.v1.schema.json`.
+
+Every generated claim starts with review status `pending` and carries page, revision, content hash, extraction method, and the best available source coordinate.
 
 The `Special:WikiKGExtractor` result page renders a read-only semantic graph view from `graph_nodes_edges.json`.
 
@@ -281,3 +304,27 @@ Collection and page-size limits are enabled by default through `WikiKGExtractorM
 The in-Wiki renderer also caps the number of displayed nodes and relationships while preserving the complete JSON export for offline analysis.
 
 This view is intentionally implemented before parser tags, persistent graph tables, Gemini calls, or direct Neo4j writes.
+
+## 10. Reproducible rice corpus
+
+`tools/rice_corpus.py` discovers variety links under the `Danh sách giống lúa` section of `Lúa` revision 875.
+
+It writes a deterministic metadata manifest plus private development and held-out inputs.
+
+The output directory is required, and the tool rejects paths inside the repository to protect private page text.
+
+```bash
+python3 extensions/WikiKGExtractor/tools/rice_corpus.py \
+    --dump <private-mediawiki-dump.sql> \
+    --output-dir <private-output-dir>
+```
+
+The default split selects 20 pages through proportional strata based on template family and source length.
+
+The tool selects the 10 development pages first.
+
+It then selects 10 held-out pages after excluding the development set and every page recorded as inspected before the freeze.
+
+The exclusion register is stored in the manifest so a previously observed page cannot silently enter the held-out split.
+
+Do not inspect or tune rules against `raw-data.test.v1.json` before the rule version and evaluation protocol are frozen.

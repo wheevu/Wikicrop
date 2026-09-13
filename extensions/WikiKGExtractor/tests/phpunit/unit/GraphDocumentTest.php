@@ -164,6 +164,43 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 		unlink( $path );
 	}
 
+	public function testRejectsDuplicateNodeIdentity() {
+		$document = self::validDocument();
+		$document['nodes'] = [ self::validNode(), self::validNode() ];
+
+		$path = self::writeTempDocument( $document );
+		$this->assertNull( GraphDocument::load( $path ) );
+		unlink( $path );
+	}
+
+	public function testRejectsDanglingEdge() {
+		$document = self::validDocument();
+		$document['nodes'] = [ self::validNode() ];
+		$document['edges'] = [ [
+			'source' => 'Lúa',
+			'source_type' => 'Crop',
+			'type' => 'HAS_VARIETY',
+			'target' => 'Missing',
+			'target_type' => 'Variety',
+			'properties' => []
+		] ];
+
+		$path = self::writeTempDocument( $document );
+		$this->assertNull( GraphDocument::load( $path ) );
+		unlink( $path );
+	}
+
+	public function testRejectsMalformedNodeProperties() {
+		$document = self::validDocument();
+		$node = self::validNode();
+		$node['properties'] = 'not-an-object';
+		$document['nodes'] = [ $node ];
+
+		$path = self::writeTempDocument( $document );
+		$this->assertNull( GraphDocument::load( $path ) );
+		unlink( $path );
+	}
+
 	public function testRenderingEscapesEdgeSourceAndTarget() {
 		$html = GraphDocument::render( [
 			'schema_version' => '1.0',
@@ -204,6 +241,55 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 		$this->assertStringNotContainsString( '<script>alert(2)</script>', $html );
 		$this->assertStringContainsString( '&lt;script>', $html );
 		$this->assertStringContainsString( 'a &amp; b', $html );
+	}
+
+	public function testRenderingUsesReadableRelationshipLabel() {
+		$html = GraphDocument::render( [
+			'schema_version' => '1.0',
+			'metadata' => [],
+			'nodes' => [],
+			'edges' => [ [
+				'source' => 'Lúa',
+				'source_type' => 'Crop',
+				'type' => 'HAS_VARIETY',
+				'target' => 'ST25',
+				'target_type' => 'Variety',
+				'properties' => []
+			] ]
+		] );
+
+		$this->assertStringContainsString( '>Có giống<', $html );
+		$this->assertStringNotContainsString( '>HAS_VARIETY<', $html );
+	}
+
+	public function testClientDataKeepsOnlyEdgesInsideBoundedNodeSet() {
+		$document = self::validDocument();
+		$document['nodes'] = [
+			self::validNode(),
+			[
+				'id' => 'ST25',
+				'label' => 'ST25',
+				'type' => 'Variety',
+				'properties' => []
+			]
+		];
+		$document['edges'] = [ [
+			'source' => 'Lúa',
+			'source_type' => 'Crop',
+			'type' => 'HAS_VARIETY',
+			'target' => 'ST25',
+			'target_type' => 'Variety',
+			'properties' => []
+		] ];
+
+		$data = GraphDocument::clientData( $document );
+		$this->assertCount( 2, $data['nodes'] );
+		$this->assertCount( 1, $data['edges'] );
+		$this->assertSame( 'Có giống', $data['edges'][0]['data']['label'] );
+		$this->assertSame(
+			$data['nodes'][0]['data']['id'],
+			$data['edges'][0]['data']['source']
+		);
 	}
 
 	public function testRenderCapsNodesAndEdges() {
@@ -290,6 +376,18 @@ class GraphDocumentTest extends MediaWikiUnitTestCase {
 			],
 			'nodes' => [],
 			'edges' => []
+		];
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private static function validNode() {
+		return [
+			'id' => 'Lúa',
+			'label' => 'Lúa',
+			'type' => 'Crop',
+			'properties' => []
 		];
 	}
 

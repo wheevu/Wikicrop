@@ -37,4 +37,9 @@ __pycache__/
 *.pyc
 *.pyd
 
+# WikiKGExtractor private corpus artifacts
+**/rice-corpus-manifest.v1.json
+**/raw-data.dev.v1.json
+**/raw-data.test.v1.json
+
 extensions/QuanLyNongNghiep/venv/

@@ -1,6 +1,6 @@
 {
   "name": "WikiKGExtractor",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "author": [
     "Mach Gia Han"
   ],
@@ -10,9 +10,9 @@
   "type": "specialpage",
   "manifest_version": 2,
   "requires": {
-    "MediaWiki": ">= 1.39.0",
+    "MediaWiki": ">= 1.43.1",
     "platform": {
-      "php": ">= 7.4"
+      "php": ">= 8.1.0"
     }
   },
   "AutoloadNamespaces": {
@@ -20,6 +20,9 @@
   },
   "SpecialPages": {
     "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor"
+  },
+  "ExtensionMessagesFiles": {
+    "WikiKGExtractorAlias": "WikiKGExtractor.alias.php"
   },
   "Hooks": {
     "SkinBuildSidebar": "MediaWiki\\Extension\\WikiKGExtractor\\Hooks::onSkinBuildSidebar"
@@ -38,7 +41,31 @@
       "styles": [
         "wikikg.css"
       ]
+    },
+    "ext.wikikg.cytoscape": {
+      "scripts": [
+        "lib/cytoscape/cytoscape.umd.js"
+      ]
+    },
+    "ext.wikikg.graph": {
+      "scripts": [
+        "wikikg.graph.js"
+      ],
+      "dependencies": [
+        "ext.wikikg.cytoscape"
+      ]
     }
+  },
+  "ForeignResourcesDir": "resources/lib",
+  "QUnitTestModule": {
+    "localBasePath": "tests/qunit",
+    "remoteExtPath": "WikiKGExtractor/tests/qunit",
+    "scripts": [
+      "wikikg.graph.test.js"
+    ],
+    "dependencies": [
+      "ext.wikikg.graph"
+    ]
   },
   "AvailableRights": [
     "wikikgextractor-run"

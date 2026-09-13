@@ -27,6 +27,7 @@ Relationships
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,9 @@ import time
 import unicodedata
 from pathlib import Path
 from typing import Any, Iterable
+
+RAW_INPUT_SCHEMA_VERSION = "1.0"
+EXTRACTOR_VERSION = "2.2.0"
 
 # ---------------------------------------------------------------------------
 # Prompt
@@ -177,6 +181,14 @@ SUSCEPTIBLE_HINTS = (
     "bị hại",
 )
 
+AFFECTED_HINTS = (
+    "gây hại",
+    "dịch hại",
+    "sâu bệnh",
+    "bị hại",
+    "phòng trừ",
+)
+
 # Giá trị hiển thị khi không tìm được dữ liệu (yêu cầu: để trống hoặc "Chưa rõ").
 UNKNOWN_VALUE = "Chưa rõ"
 
@@ -226,6 +238,19 @@ CROP_REQUIRED_KEYS = (
     "family",
     "genus",
     "description",
+)
+
+CANDIDATE_PROPERTY_KEYS = (
+    "scientific_name",
+    "kingdom",
+    "taxon_order",
+    "family",
+    "genus",
+    "variety_type",
+    "crossbred_from",
+    "growth_duration",
+    "plant_height",
+    "yield_amount",
 )
 
 EMPTY_VALUES = {
@@ -402,11 +427,51 @@ def load_pages(
     with input_path.open("r", encoding="utf-8") as file:
         data = json.load(file)
 
-    pages = data.get("pages", []) if isinstance(data, dict) else data
+    schema_version = None
+    if isinstance(data, dict):
+        schema_version = data.get("schema_version")
+        if schema_version is not None and schema_version != RAW_INPUT_SCHEMA_VERSION:
+            raise ValueError(
+                "Phiên bản schema đầu vào không được hỗ trợ: "
+                f"{schema_version!r}; hỗ trợ {RAW_INPUT_SCHEMA_VERSION!r}."
+            )
+        pages = data.get("pages", [])
+    else:
+        pages = data
+
     result: list[dict[str, Any]] = []
-    for page in pages or []:
+    for index, page in enumerate(pages or []):
+        if not isinstance(page, dict):
+            if schema_version == RAW_INPUT_SCHEMA_VERSION:
+                raise ValueError(f"Trang đầu vào #{index + 1} phải là object JSON.")
+            continue
+        if schema_version == RAW_INPUT_SCHEMA_VERSION:
+            title_value = page.get("title")
+            wikitext_value = page.get("wikitext")
+            page_id = page.get("page_id")
+            revision_id = page.get("revision_id")
+            if not isinstance(title_value, str) or not title_value.strip():
+                raise ValueError(f"Trang đầu vào #{index + 1} thiếu title hợp lệ.")
+            if not isinstance(wikitext_value, str):
+                raise ValueError(f"Trang '{title_value}' thiếu wikitext hợp lệ.")
+            if not isinstance(page_id, int) or isinstance(page_id, bool) or page_id < 1:
+                raise ValueError(f"Trang '{title_value}' thiếu page_id hợp lệ.")
+            if (
+                not isinstance(revision_id, int)
+                or isinstance(revision_id, bool)
+                or revision_id < 1
+            ):
+                raise ValueError(f"Trang '{title_value}' thiếu revision_id hợp lệ.")
+            expected_hash = hashlib.sha256(wikitext_value.encode("utf-8")).hexdigest()
+            if page.get("content_hash") != expected_hash:
+                raise ValueError(
+                    f"Trang '{title_value}' có content_hash không khớp raw wikitext."
+                )
         title = clean_value(page.get("title"))
-        text = str(page.get("text", "")).strip()
+        rendered_text = str(page.get("text", "")).strip()
+        raw_wikitext = str(page.get("wikitext", ""))
+        wikitext = raw_wikitext if raw_wikitext.strip() else ""
+        text = wikitext or rendered_text
         if not text:
             continue
         crop = clean_value(page.get("crop"))
@@ -426,6 +491,8 @@ def load_pages(
             {
                 "title": title,
                 "text": text,
+                "wikitext": wikitext,
+                "rendered_text": rendered_text,
                 "url": clean_value(page.get("url")),
                 "kind": kind,
                 "crop": crop,
@@ -722,6 +789,396 @@ def normalize_taxonomy(value: Any) -> dict[str, str]:
         if text and not text.lower().startswith("(không phân hạng"):
             result[key] = text
     return result
+
+
+def find_supporting_span(
+    text: str,
+    terms: Iterable[str],
+    max_chars: int = 400,
+) -> tuple[str, int, int] | None:
+    """Return one exact source span containing the first matching term."""
+    candidates = sorted(
+        {clean_value(term) for term in terms if clean_value(term)},
+        key=len,
+        reverse=True,
+    )
+    for term in candidates:
+        match = re.search(re.escape(term), text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        start = text.rfind("\n", 0, match.start()) + 1
+        end = text.find("\n", match.end())
+        if end == -1:
+            end = len(text)
+        if end - start > max_chars:
+            padding = max(0, (max_chars - len(term)) // 2)
+            start = max(start, match.start() - padding)
+            end = min(end, start + max_chars)
+        span = text[start:end].strip()
+        if not span:
+            continue
+        leading = len(text[start:end]) - len(text[start:end].lstrip())
+        span_start = start + leading
+        return span, span_start, span_start + len(span)
+    return None
+
+
+def find_relationship_supporting_span(
+    text: str,
+    terms: Iterable[str],
+    relationship_hints: Iterable[str],
+    *,
+    opposing_hints: Iterable[str] = (),
+    max_chars: int = 400,
+) -> tuple[str, int, int] | None:
+    """Return a span where the target and relationship language co-occur."""
+    targets = sorted(
+        {clean_value(term) for term in terms if clean_value(term)},
+        key=len,
+        reverse=True,
+    )
+    supporting = [clean_value(hint) for hint in relationship_hints if clean_value(hint)]
+    opposing = [clean_value(hint) for hint in opposing_hints if clean_value(hint)]
+
+    for term in targets:
+        for target_match in re.finditer(re.escape(term), text, flags=re.IGNORECASE):
+            context_start = max(0, target_match.start() - 130)
+            context = text[context_start : target_match.start()]
+            hint_matches: list[tuple[int, bool, int]] = []
+            for hint in supporting:
+                for match in re.finditer(re.escape(hint), context, flags=re.IGNORECASE):
+                    hint_matches.append((match.end(), True, match.start()))
+            for hint in opposing:
+                for match in re.finditer(re.escape(hint), context, flags=re.IGNORECASE):
+                    hint_matches.append((match.end(), False, match.start()))
+            if not hint_matches:
+                continue
+
+            _, supports_relationship, relative_hint_start = max(
+                hint_matches,
+                key=lambda item: (item[0], not item[1]),
+            )
+            if not supports_relationship:
+                continue
+
+            hint_start = context_start + relative_hint_start
+            line_start = text.rfind("\n", 0, hint_start) + 1
+            line_end = text.find("\n", target_match.end())
+            if line_end == -1:
+                line_end = len(text)
+            start = line_start
+            end = line_end
+            if end - start > max_chars:
+                core_start = hint_start
+                core_end = target_match.end()
+                padding = max(0, (max_chars - (core_end - core_start)) // 2)
+                start = max(line_start, core_start - padding)
+                end = min(line_end, core_end + padding)
+            raw_span = text[start:end]
+            span = raw_span.strip()
+            if not span:
+                continue
+            leading = len(raw_span) - len(raw_span.lstrip())
+            span_start = start + leading
+            return span, span_start, span_start + len(span)
+    return None
+
+
+def pest_evidence_terms(name: str) -> list[str]:
+    terms = [name]
+    for alias, canonical in PEST_ALIASES.items():
+        if canonical == name:
+            terms.append(alias)
+    if name.startswith("Bệnh "):
+        terms.append(name[5:])
+    return terms
+
+
+def claim_evidence(
+    page: dict[str, Any],
+    terms: Iterable[str],
+    *,
+    extraction_method: str,
+    extractor_version: str,
+    page_identity: bool = False,
+    relationship_hints: Iterable[str] = (),
+    opposing_hints: Iterable[str] = (),
+) -> dict[str, Any]:
+    text = str(page.get("wikitext") or page.get("text") or "")
+    evidence: dict[str, Any] = {
+        "page_id": page.get("page_id"),
+        "revision_id": page.get("revision_id"),
+        "content_hash": clean_value(page.get("content_hash")),
+        "page_title": clean_value(page.get("title")),
+        "extraction_method": extraction_method,
+        "extractor_version": extractor_version,
+    }
+    relationship_hints = tuple(relationship_hints)
+    span = (
+        find_relationship_supporting_span(
+            text,
+            terms,
+            relationship_hints,
+            opposing_hints=opposing_hints,
+        )
+        if relationship_hints
+        else find_supporting_span(text, terms)
+    )
+    if span:
+        supporting_span, start, end = span
+        evidence.update(
+            {
+                "location_type": "source_span",
+                "source_offset_start": start,
+                "source_offset_end": end,
+                "supporting_span": supporting_span,
+                "span_hash": hashlib.sha256(
+                    supporting_span.encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    elif page_identity:
+        evidence.update(
+            {
+                "location_type": "page_title",
+                "location": clean_value(page.get("title")),
+            }
+        )
+    else:
+        evidence["location_type"] = "page"
+
+    identity = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+    evidence["evidence_id"] = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return evidence
+
+
+def create_candidate_claims(
+    entities: list[dict[str, Any]],
+    pages: list[dict[str, Any]],
+    *,
+    extraction_method: str,
+    extractor_version: str,
+) -> dict[str, Any]:
+    """Build provisional semantic claims with revision-pinned evidence."""
+    page_index: dict[str, dict[str, Any]] = {}
+    provenance_pages: list[dict[str, Any]] = []
+    skipped_source_pages: list[str] = []
+    for page in pages:
+        page_id = page.get("page_id")
+        revision_id = page.get("revision_id")
+        content_hash = clean_value(page.get("content_hash"))
+        if (
+            not isinstance(page_id, int)
+            or page_id < 1
+            or not isinstance(revision_id, int)
+            or revision_id < 1
+            or re.fullmatch(r"[a-f0-9]{64}", content_hash) is None
+        ):
+            skipped_source_pages.append(clean_value(page.get("title")))
+            continue
+        provenance_pages.append(page)
+        page_index[norm_key(page.get("title"))] = page
+        short = short_variety_name(page.get("title"), page.get("crop"))
+        page_index.setdefault(norm_key(short), page)
+
+    claims: dict[str, dict[str, Any]] = {}
+
+    def add_claim(
+        subject_type: str,
+        subject_id: str,
+        predicate: str,
+        page: dict[str, Any],
+        *,
+        object_type: str = "",
+        object_id: str = "",
+        value: str = "",
+        qualifiers: dict[str, str] | None = None,
+        evidence_terms: Iterable[str] = (),
+        page_identity: bool = False,
+        relationship_hints: Iterable[str] = (),
+        opposing_hints: Iterable[str] = (),
+    ) -> None:
+        subject_id = clean_value(subject_id)
+        object_id = clean_value(object_id)
+        value = clean_value(value)
+        qualifiers = {
+            key: cleaned
+            for key, raw in (qualifiers or {}).items()
+            if (cleaned := clean_value(raw))
+        }
+        semantic: dict[str, Any] = {
+            "claim_type": "relationship" if object_id else "property",
+            "subject": {"type": subject_type, "id": subject_id},
+            "predicate": predicate,
+            "qualifiers": qualifiers,
+        }
+        if object_id:
+            semantic["object"] = {"type": object_type, "id": object_id}
+        else:
+            semantic["value"] = value
+        if not subject_id or (not object_id and not value):
+            return
+
+        serialized = json.dumps(semantic, ensure_ascii=False, sort_keys=True)
+        claim_id = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        claim = claims.setdefault(
+            claim_id,
+            {
+                "claim_id": claim_id,
+                **semantic,
+                "evidence": [],
+                "traceability_complete": True,
+                "review": {"status": "pending"},
+            },
+        )
+        evidence = claim_evidence(
+            page,
+            evidence_terms,
+            extraction_method=extraction_method,
+            extractor_version=extractor_version,
+            page_identity=page_identity,
+            relationship_hints=relationship_hints,
+            opposing_hints=opposing_hints,
+        )
+        evidence_ids = {item["evidence_id"] for item in claim["evidence"]}
+        if evidence["evidence_id"] not in evidence_ids:
+            claim["evidence"].append(evidence)
+        if evidence["location_type"] == "page":
+            claim["traceability_complete"] = False
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        page = page_index.get(norm_key(entity.get("page_title")))
+        if not page:
+            page = page_index.get(norm_key(entity.get("entity")))
+        if not page:
+            continue
+
+        kind = str(entity.get("kind") or page.get("kind") or "").lower()
+        crop = clean_value(entity.get("crop") or page.get("crop"))
+        raw_name = clean_value(entity.get("entity") or page.get("title"))
+        subject_type = "Crop" if kind == "species" else "Variety"
+        subject_id = crop or raw_name if kind == "species" else short_variety_name(
+            raw_name,
+            crop,
+        )
+
+        taxonomy = normalize_taxonomy(entity.get("taxonomy"))
+        properties = entity.get("properties")
+        properties = properties if isinstance(properties, dict) else {}
+        for key, value in taxonomy.items():
+            if key not in CANDIDATE_PROPERTY_KEYS:
+                continue
+            add_claim(
+                "Crop",
+                crop or raw_name,
+                key,
+                page,
+                value=value,
+                evidence_terms=[value],
+            )
+
+        if kind != "species":
+            for key in CANDIDATE_PROPERTY_KEYS:
+                if key in taxonomy or key not in properties:
+                    continue
+                value = clean_value(properties.get(key))
+                terms = [value]
+                if key == "crossbred_from":
+                    terms.extend(re.split(r"\s*/\s*", value))
+                add_claim(
+                    subject_type,
+                    subject_id,
+                    key,
+                    page,
+                    value=value,
+                    evidence_terms=terms,
+                )
+
+        resistant = as_pest_list(entity.get("resistant_to"))
+        susceptible = as_pest_list(entity.get("susceptible_to"))
+        mentioned = [canonical_pest(name) for name in as_list(entity.get("pests"))]
+
+        if kind != "species" and crop:
+            add_claim(
+                "Crop",
+                crop,
+                "HAS_VARIETY",
+                page,
+                object_type="Variety",
+                object_id=subject_id,
+                evidence_terms=[subject_id, raw_name],
+                page_identity=True,
+            )
+        for relation, items in (
+            ("RESISTANT_TO", resistant),
+            ("SUSCEPTIBLE_TO", susceptible),
+        ):
+            for item in items:
+                add_claim(
+                    subject_type,
+                    subject_id,
+                    relation,
+                    page,
+                    object_type="Pest",
+                    object_id=item["name"],
+                    qualifiers={"level": item["level"]},
+                    evidence_terms=pest_evidence_terms(item["name"]),
+                    relationship_hints=(
+                        RESISTANCE_HINTS
+                        if relation == "RESISTANT_TO"
+                        else SUSCEPTIBLE_HINTS
+                    ),
+                    opposing_hints=(
+                        SUSCEPTIBLE_HINTS if relation == "RESISTANT_TO" else ()
+                    ),
+                )
+        if crop:
+            crop_pests = mentioned + [item["name"] for item in resistant + susceptible]
+            for pest_name in dict.fromkeys(name for name in crop_pests if name):
+                add_claim(
+                    "Crop",
+                    crop,
+                    "AFFECTED_BY",
+                    page,
+                    object_type="Pest",
+                    object_id=pest_name,
+                    evidence_terms=pest_evidence_terms(pest_name),
+                    relationship_hints=(
+                        AFFECTED_HINTS + RESISTANCE_HINTS + SUSCEPTIBLE_HINTS
+                    ),
+                )
+
+    ordered = sorted(claims.values(), key=lambda claim: claim["claim_id"])
+    by_predicate: dict[str, int] = {}
+    for claim in ordered:
+        predicate = str(claim["predicate"])
+        by_predicate[predicate] = by_predicate.get(predicate, 0) + 1
+    return {
+        "schema_version": "1.0",
+        "metadata": {
+            "extractor_version": extractor_version,
+            "extraction_method": extraction_method,
+            "review_state": "pending",
+            "source_pages": [
+                {
+                    key: page.get(key)
+                    for key in ("title", "page_id", "revision_id", "content_hash")
+                }
+                for page in provenance_pages
+            ],
+        },
+        "summary": {
+            "claim_count": len(ordered),
+            "traceability_complete_count": sum(
+                bool(claim["traceability_complete"]) for claim in ordered
+            ),
+            "claims_by_predicate": by_predicate,
+            "skipped_source_pages": skipped_source_pages,
+        },
+        "claims": ordered,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1565,7 +2022,11 @@ def main() -> int:
         return 2
 
     skipped_titles: list[str] = []
-    pages = load_pages(input_path, skipped_titles)
+    try:
+        pages = load_pages(input_path, skipped_titles)
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        print(f"Không đọc được file đầu vào: {error}", file=sys.stderr)
+        return 2
     if not pages:
         print("Không có trang nào có nội dung trong file đầu vào.", file=sys.stderr)
         return 3
@@ -1623,6 +2084,19 @@ def main() -> int:
             entities.append(heuristic_entity(page))
             warnings.append(f"AI bỏ sót trang “{page['title']}”; đã bù bằng luật.")
 
+    extraction_method = "ai" if not args.no_ai and api_key else "rules"
+    extractor_version = EXTRACTOR_VERSION
+    candidate_claims = create_candidate_claims(
+        entities,
+        ordered_pages,
+        extraction_method=extraction_method,
+        extractor_version=extractor_version,
+    )
+    warnings.extend(
+        "Không tạo candidate claim cho trang thiếu provenance: " + title
+        for title in candidate_claims["summary"]["skipped_source_pages"]
+    )
+
     graph, graph_warnings = build_graph(entities, ordered_pages, default_crop)
     warnings.extend(graph_warnings)
 
@@ -1641,8 +2115,8 @@ def main() -> int:
     graph_document = create_nodes_edges(
         graph,
         {
-            "extractor_version": "2.1.1",
-            "extraction_method": "ai" if not args.no_ai and api_key else "rules",
+            "extractor_version": extractor_version,
+            "extraction_method": extraction_method,
             "source_pages": [
                 {
                     key: page.get(key, "")
@@ -1665,6 +2139,11 @@ def main() -> int:
 
     outputs = {
         "graph_data_raw.json": json.dumps(entities, ensure_ascii=False, indent=2),
+        "candidate_claims.json": json.dumps(
+            candidate_claims,
+            ensure_ascii=False,
+            indent=2,
+        ),
         "neo4j_import.cypher": render_cypher_file(graph, crop_names),
         "mediawiki_bang_thuoc_tinh_cay_trong.txt": create_mediawiki_table(graph),
     }
@@ -1683,6 +2162,10 @@ def main() -> int:
         "variety_page_count": len(variety_pages),
         "node_count": len(graph.node_list()),
         "edge_count": len(graph.edge_list()),
+        "candidate_claim_count": candidate_claims["summary"]["claim_count"],
+        "traceability_complete_count": candidate_claims["summary"][
+            "traceability_complete_count"
+        ],
         "nodes_by_label": node_counts,
         "edges_by_type": edge_counts,
         "warnings": warnings,

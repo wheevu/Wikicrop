@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/raw-data.v1.schema.json",
+  "title": "WikiKGExtractor raw page input",
+  "type": "object",
+  "required": ["schema_version", "pages"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_url": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "page": {
+      "type": "object",
+      "required": [
+        "title",
+        "text",
+        "wikitext",
+        "crop",
+        "page_id",
+        "revision_id",
+        "content_hash"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "wikitext": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": ["species", "variety"]
+        },
+        "crop": {
+          "type": "string"
+        },
+        "source_pages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "page_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "revision_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

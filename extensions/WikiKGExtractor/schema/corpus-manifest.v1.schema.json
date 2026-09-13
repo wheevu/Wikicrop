@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/corpus-manifest.v1.schema.json",
+  "title": "WikiKGExtractor revision-defined corpus manifest",
+  "type": "object",
+  "required": ["schema_version", "corpus", "source", "selection", "counts", "pages"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "corpus": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "required": ["title", "page_id", "revision_id", "content_hash", "discovery_heading_rule"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "page_id": { "type": "integer", "minimum": 1 },
+        "revision_id": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "discovery_heading_rule": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "method",
+        "strata",
+        "seed",
+        "sample_size",
+        "dev_size",
+        "test_size",
+        "heldout_exclusion_policy",
+        "previously_observed_titles"
+      ],
+      "properties": {
+        "method": { "type": "string", "minLength": 1 },
+        "strata": { "type": "string", "minLength": 1 },
+        "seed": { "type": "string", "minLength": 1 },
+        "sample_size": { "type": "integer", "minimum": 2 },
+        "dev_size": { "type": "integer", "minimum": 1 },
+        "test_size": { "type": "integer", "minimum": 1 },
+        "heldout_exclusion_policy": { "type": "string", "minLength": 1 },
+        "previously_observed_titles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "counts": {
+      "type": "object",
+      "required": ["discovered", "statuses", "selected"],
+      "properties": {
+        "discovered": { "type": "integer", "minimum": 0 },
+        "statuses": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "selected": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "page": {
+      "type": "object",
+      "required": [
+        "discovery_index",
+        "requested_title",
+        "resolved_title",
+        "status",
+        "eligible_for_development",
+        "eligible_for_heldout",
+        "heldout_exclusion_reason",
+        "selected",
+        "split"
+      ],
+      "properties": {
+        "discovery_index": { "type": "integer", "minimum": 0 },
+        "requested_title": { "type": "string", "minLength": 1 },
+        "resolved_title": { "type": ["string", "null"] },
+        "status": {
+          "enum": ["resolved", "missing", "redirect_unresolved", "duplicate_target"]
+        },
+        "reason": { "type": "string" },
+        "page_id": { "type": "integer", "minimum": 1 },
+        "revision_id": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "content_model": { "type": "string" },
+        "template_family": { "type": "string" },
+        "source_chars": { "type": "integer", "minimum": 1 },
+        "length_band": { "enum": ["short", "medium", "long"] },
+        "stratum": { "type": "string" },
+        "selection_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "eligible_for_development": { "type": "boolean" },
+        "eligible_for_heldout": { "type": "boolean" },
+        "heldout_exclusion_reason": { "type": ["string", "null"] },
+        "selected": { "type": "boolean" },
+        "split": { "enum": ["dev", "test", null] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "split": { "const": "dev" } } },
+          "then": {
+            "properties": {
+              "selected": { "const": true },
+              "eligible_for_development": { "const": true }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "split": { "const": "test" } } },
+          "then": {
+            "properties": {
+              "selected": { "const": true },
+              "eligible_for_heldout": { "const": true },
+              "heldout_exclusion_reason": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "selected": { "const": false } } },
+          "then": { "properties": { "split": { "type": "null" } } }
+        },
+        {
+          "if": {
+            "properties": { "eligible_for_heldout": { "const": false } }
+          },
+          "then": {
+            "properties": {
+              "heldout_exclusion_reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    }
+  }
+}

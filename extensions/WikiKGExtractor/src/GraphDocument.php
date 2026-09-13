@@ -16,6 +16,12 @@ class GraphDocument {
 	private const MAX_DOCUMENT_BYTES = 5242880;
 	private const MAX_RENDERED_NODES = 200;
 	private const MAX_RENDERED_EDGES = 500;
+	private const EDGE_LABELS = [
+		'HAS_VARIETY' => 'Có giống',
+		'RESISTANT_TO' => 'Kháng',
+		'SUSCEPTIBLE_TO' => 'Nhiễm',
+		'AFFECTED_BY' => 'Bị gây hại bởi'
+	];
 
 	/**
 	 * @param string $path
@@ -45,8 +51,60 @@ class GraphDocument {
 		if ( !self::hasValidMetadata( $document['metadata'] ?? null ) ) {
 			return null;
 		}
+		if ( !self::hasValidGraph( $document['nodes'], $document['edges'] ) ) {
+			return null;
+		}
 
 		return $document;
+	}
+
+	/**
+	 * @param array<int,mixed> $nodes
+	 * @param array<int,mixed> $edges
+	 * @return bool
+	 */
+	private static function hasValidGraph( array $nodes, array $edges ) {
+		$nodeKeys = [];
+		foreach ( $nodes as $node ) {
+			if ( !is_array( $node )
+				|| trim( (string)( $node['id'] ?? '' ) ) === ''
+				|| trim( (string)( $node['label'] ?? '' ) ) === ''
+				|| trim( (string)( $node['type'] ?? '' ) ) === ''
+				|| !is_array( $node['properties'] ?? null )
+				|| ( isset( $node['extra_labels'] )
+					&& !is_array( $node['extra_labels'] ) )
+			) {
+				return false;
+			}
+			$key = self::nodeKey( $node['type'], $node['id'] );
+			if ( isset( $nodeKeys[$key] ) ) {
+				return false;
+			}
+			$nodeKeys[$key] = true;
+		}
+
+		foreach ( $edges as $edge ) {
+			if ( !is_array( $edge )
+				|| trim( (string)( $edge['source'] ?? '' ) ) === ''
+				|| trim( (string)( $edge['source_type'] ?? '' ) ) === ''
+				|| trim( (string)( $edge['type'] ?? '' ) ) === ''
+				|| trim( (string)( $edge['target'] ?? '' ) ) === ''
+				|| trim( (string)( $edge['target_type'] ?? '' ) ) === ''
+				|| !is_array( $edge['properties'] ?? null )
+				|| !isset( $nodeKeys[self::nodeKey(
+					$edge['source_type'],
+					$edge['source']
+				)] )
+				|| !isset( $nodeKeys[self::nodeKey(
+					$edge['target_type'],
+					$edge['target']
+				)] )
+			) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -127,6 +185,14 @@ class GraphDocument {
 		$edges = array_slice( $edges, 0, self::MAX_RENDERED_EDGES );
 
 		$metadata = $document['metadata'];
+		$sourceRevisions = [];
+		foreach ( $metadata['source_pages'] ?? [] as $source ) {
+			if ( is_array( $source ) && !empty( $source['title'] ) ) {
+				$sourceRevisions[(string)$source['title']] = (int)(
+					$source['revision_id'] ?? 0
+				);
+			}
+		}
 		$schemaVersion = (string)(
 			$document['schema_version'] ?? self::SCHEMA_VERSION
 		);
@@ -153,13 +219,20 @@ class GraphDocument {
 		}
 
 		$nodeCards = '';
+		$nodeLinks = [];
 		foreach ( $nodes as $node ) {
-			$nodeCards .= self::renderNode( $node );
+			$pageTitle = trim( (string)( $node['properties']['page_title'] ?? '' ) );
+			$revisionId = $sourceRevisions[$pageTitle] ?? 0;
+			$nodeLinks[self::nodeKey( $node['type'] ?? '', $node['id'] ?? '' )] = [
+				'title' => $pageTitle,
+				'revision_id' => $revisionId
+			];
+			$nodeCards .= self::renderNode( $node, $revisionId );
 		}
 
 		$edgeRows = '';
 		foreach ( $edges as $edge ) {
-			$edgeRows .= self::renderEdge( $edge );
+			$edgeRows .= self::renderEdge( $edge, $nodeLinks );
 		}
 
 		$edgesHtml = Html::rawElement(
@@ -185,6 +258,25 @@ class GraphDocument {
 			Html::element( 'h4', [ 'class' => 'wikikg-subhead' ], 'Graph trong Wiki' )
 				. $summary
 				. self::renderSources( $metadata['source_pages'] ?? [] )
+				. Html::rawElement(
+					'div',
+					[ 'class' => 'wikikg-graph-visual', 'hidden' => true ],
+					Html::element(
+						'h5',
+						[ 'class' => 'wikikg-graph-heading' ],
+						'Sơ đồ quan hệ'
+					)
+						. Html::element( 'div', [
+							'class' => 'wikikg-graph-canvas',
+							'data-wikikg-graph' => '1',
+							'aria-hidden' => 'true'
+						] )
+						. Html::element(
+							'p',
+							[ 'class' => 'wikikg-note' ],
+							'Dùng danh sách node và bảng quan hệ bên dưới để đọc bằng bàn phím.'
+						)
+				)
 				. Html::element(
 					'h5',
 					[ 'class' => 'wikikg-graph-heading' ],
@@ -198,6 +290,82 @@ class GraphDocument {
 				)
 				. $edgesHtml
 		);
+	}
+
+	/**
+	 * Return the bounded, presentation-only data passed to ResourceLoader.
+	 *
+	 * @param array<string,mixed> $document
+	 * @return array<string,mixed>
+	 */
+	public static function clientData( array $document ) {
+		$nodes = array_slice( $document['nodes'] ?? [], 0, self::MAX_RENDERED_NODES );
+		$allowed = [];
+		$clientNodes = [];
+		$sourceRevisions = [];
+		foreach ( $document['metadata']['source_pages'] ?? [] as $source ) {
+			if ( is_array( $source ) && !empty( $source['title'] ) ) {
+				$sourceRevisions[(string)$source['title']] = (int)(
+					$source['revision_id'] ?? 0
+				);
+			}
+		}
+		foreach ( $nodes as $node ) {
+			if ( !is_array( $node ) ) {
+				continue;
+			}
+			$key = self::nodeKey( $node['type'] ?? '', $node['id'] ?? '' );
+			$allowed[$key] = true;
+			$pageTitle = trim( (string)( $node['properties']['page_title'] ?? '' ) );
+			$clientNodes[] = [
+				'data' => [
+					'id' => self::clientNodeId( $key ),
+					'label' => (string)( $node['label'] ?? $node['id'] ?? '' ),
+					'type' => (string)( $node['type'] ?? 'Node' ),
+					'href' => self::pageUrl(
+						$pageTitle,
+						$sourceRevisions[$pageTitle] ?? 0
+					)
+				]
+			];
+		}
+
+		$clientEdges = [];
+		foreach ( $document['edges'] ?? [] as $index => $edge ) {
+			if ( !is_array( $edge ) ) {
+				continue;
+			}
+			$sourceKey = self::nodeKey(
+				$edge['source_type'] ?? '',
+				$edge['source'] ?? ''
+			);
+			$targetKey = self::nodeKey(
+				$edge['target_type'] ?? '',
+				$edge['target'] ?? ''
+			);
+			if ( !isset( $allowed[$sourceKey], $allowed[$targetKey] ) ) {
+				continue;
+			}
+			$type = (string)( $edge['type'] ?? 'RELATED_TO' );
+			$clientEdges[] = [
+				'data' => [
+					'id' => 'e-' . hash( 'sha256', $sourceKey . "\0" . $type
+						. "\0" . $targetKey . "\0" . $index ),
+					'source' => self::clientNodeId( $sourceKey ),
+					'target' => self::clientNodeId( $targetKey ),
+					'label' => self::edgeLabel( $type )
+				]
+			];
+			if ( count( $clientEdges ) >= self::MAX_RENDERED_EDGES ) {
+				break;
+			}
+		}
+
+		return [
+			'schema_version' => self::SCHEMA_VERSION,
+			'nodes' => $clientNodes,
+			'edges' => $clientEdges
+		];
 	}
 
 	/**
@@ -222,7 +390,11 @@ class GraphDocument {
 				Html::rawElement(
 					'td',
 					[],
-					self::renderPageLink( $source['title'], $source['title'] )
+					self::renderPageLink(
+						$source['title'],
+						$source['title'],
+						(int)( $source['revision_id'] ?? 0 )
+					)
 				)
 					. Html::element( 'td', [], (string)( $source['kind'] ?? '' ) )
 					. Html::element( 'td', [], (string)( $source['revision_id'] ?? 'Chưa có' ) )
@@ -261,7 +433,7 @@ class GraphDocument {
 	 * @param array<string,mixed> $node
 	 * @return string
 	 */
-	private static function renderNode( array $node ) {
+	private static function renderNode( array $node, $revisionId = 0 ) {
 		$id = trim( (string)( $node['id'] ?? '' ) );
 		$type = trim( (string)( $node['type'] ?? 'Node' ) );
 		$properties = is_array( $node['properties'] ?? null )
@@ -269,7 +441,8 @@ class GraphDocument {
 			: [];
 		$label = self::renderPageLink(
 			$properties['page_title'] ?? '',
-			$id
+			$id,
+			$revisionId
 		);
 		$propertyItems = '';
 
@@ -297,11 +470,12 @@ class GraphDocument {
 	 * @param array<string,mixed> $edge
 	 * @return string
 	 */
-	private static function renderEdge( array $edge ) {
+	private static function renderEdge( array $edge, array $nodeLinks = [] ) {
 		$properties = is_array( $edge['properties'] ?? null )
 			? $edge['properties']
 			: [];
-		$type = trim( (string)( $edge['type'] ?? 'RELATED_TO' ) );
+		$rawType = trim( (string)( $edge['type'] ?? 'RELATED_TO' ) );
+		$type = self::edgeLabel( $rawType );
 		if ( $properties ) {
 			$type .= ' (' . self::displayValue( $properties ) . ')';
 		}
@@ -309,9 +483,34 @@ class GraphDocument {
 		return Html::rawElement(
 			'tr',
 			[],
-			Html::element( 'td', [], (string)$edge['source'] )
+			Html::rawElement(
+				'td',
+				[],
+				self::renderEndpointLink( $edge, 'source', $nodeLinks )
+			)
 				. Html::element( 'td', [], $type )
-				. Html::element( 'td', [], (string)$edge['target'] )
+				. Html::rawElement(
+					'td',
+					[],
+					self::renderEndpointLink( $edge, 'target', $nodeLinks )
+				)
+		);
+	}
+
+	/**
+	 * @param array<string,mixed> $edge
+	 * @param string $side
+	 * @param array<string,array{title:string,revision_id:int}> $nodeLinks
+	 * @return string
+	 */
+	private static function renderEndpointLink( array $edge, $side, array $nodeLinks ) {
+		$id = (string)( $edge[$side] ?? '' );
+		$type = (string)( $edge[$side . '_type'] ?? '' );
+		$link = $nodeLinks[self::nodeKey( $type, $id )] ?? [];
+		return self::renderPageLink(
+			$link['title'] ?? '',
+			$id,
+			$link['revision_id'] ?? 0
 		);
 	}
 
@@ -334,16 +533,58 @@ class GraphDocument {
 	 * @param string $fallback
 	 * @return string
 	 */
-	private static function renderPageLink( $pageTitle, $fallback ) {
+	private static function renderPageLink( $pageTitle, $fallback, $revisionId = 0 ) {
 		$pageTitle = trim( (string)$pageTitle );
 		$title = $pageTitle !== '' ? Title::newFromText( $pageTitle ) : false;
 		if ( $title ) {
 			return Html::element(
 				'a',
-				[ 'href' => $title->getLocalURL() ],
+				[ 'href' => $title->getLocalURL(
+					(int)$revisionId > 0 ? [ 'oldid' => (int)$revisionId ] : []
+				) ],
 				$fallback
 			);
 		}
 		return Html::element( 'span', [], $fallback );
+	}
+
+	/**
+	 * @param mixed $type
+	 * @param mixed $id
+	 * @return string
+	 */
+	private static function nodeKey( $type, $id ) {
+		return trim( (string)$type ) . "\0" . trim( (string)$id );
+	}
+
+	/**
+	 * @param string $nodeKey
+	 * @return string
+	 */
+	private static function clientNodeId( $nodeKey ) {
+		return 'n-' . rtrim( strtr( base64_encode( $nodeKey ), '+/', '-_' ), '=' );
+	}
+
+	/**
+	 * @param string $type
+	 * @return string
+	 */
+	private static function edgeLabel( $type ) {
+		return self::EDGE_LABELS[$type] ?? $type;
+	}
+
+	/**
+	 * @param string $pageTitle
+	 * @param int $revisionId
+	 * @return string
+	 */
+	private static function pageUrl( $pageTitle, $revisionId ) {
+		$pageTitle = trim( (string)$pageTitle );
+		$title = $pageTitle !== '' ? Title::newFromText( $pageTitle ) : false;
+		return $title
+			? $title->getLocalURL(
+				(int)$revisionId > 0 ? [ 'oldid' => (int)$revisionId ] : []
+			)
+			: '';
 	}
 }

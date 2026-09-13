@@ -35,7 +35,7 @@ class LocalWikiExtractor {
     private $permissionManager;
 
     /** @var mixed */
-    private $parser;
+    private $contentRenderer;
 
     /** @var ParserOptions */
     private $parserOptions;
@@ -68,7 +68,7 @@ class LocalWikiExtractor {
         ) ) );
         $this->revisionLookup = $services->getRevisionLookup();
         $this->permissionManager = $services->getPermissionManager();
-        $this->parser = $services->getParser();
+        $this->contentRenderer = $services->getContentRenderer();
         $this->parserOptions = ParserOptions::newFromUser( $user );
         $this->maxCollectedPages = max( 1, (int)$maxCollectedPages );
         $this->maxPageChars = max( 1000, (int)$maxPageChars );
@@ -152,6 +152,7 @@ class LocalWikiExtractor {
                     $speciesPages[] = [
                         'title' => $resolvedSourceTitle->getPrefixedText(),
                         'url' => $resolvedSourceTitle->getFullURL(),
+                        'wikitext' => $sourcePage['wikitext'],
                         'text' => $speciesText,
                         'kind' => 'species',
                         'crop' => $resolvedSourceTitle->getPrefixedText(),
@@ -250,6 +251,7 @@ class LocalWikiExtractor {
                 $entry = [
                     'title' => $resolvedTitle->getPrefixedText(),
                     'url' => $resolvedTitle->getFullURL(),
+                    'wikitext' => $page['wikitext'],
                     'text' => $text,
                     'kind' => 'variety',
                     'crop' => $sourceNames ? (string)$sourceNames[0] : '',
@@ -280,7 +282,7 @@ class LocalWikiExtractor {
     }
 
     /**
-     * @return array{title:Title,html:string}|array{error:string}
+     * @return array{title:Title,html:string,wikitext:string,page_id:int,revision_id:int,content_hash:string}|array{error:string}
      */
     private function loadRenderedPage( Title $requestedTitle ) {
         if ( !$this->permissionManager->userCan(
@@ -333,6 +335,10 @@ class LocalWikiExtractor {
             }
         }
 
+        if ( $content->getModel() !== CONTENT_MODEL_WIKITEXT ) {
+            return [ 'error' => 'Mô hình nội dung của trang không phải wikitext.' ];
+        }
+
         // WikitextContent extends TextContent and exposes getText().
         // ContentHandler::getContentText() was deprecated in MediaWiki 1.37.
         if ( !method_exists( $content, 'getText' ) ) {
@@ -350,18 +356,19 @@ class LocalWikiExtractor {
             ];
         }
 
-        $parserOutput = $this->parser->parse(
-            $sourceText,
+        $parserOutput = $this->contentRenderer->getParserOutput(
+            $content,
             $title,
-            $this->parserOptions,
-            true,
-            true,
-            $revision->getId()
+            $revision,
+            $this->parserOptions
         );
 
         return [
             'title' => $title,
-            'html' => (string)$parserOutput->getText(),
+            'html' => (string)$parserOutput
+                ->runOutputPipeline( $this->parserOptions, [] )
+                ->getContentHolderText(),
+            'wikitext' => $sourceText,
             'page_id' => (int)$title->getArticleID(),
             'revision_id' => (int)$revision->getId(),
             'content_hash' => hash( 'sha256', $sourceText )

@@ -25,7 +25,7 @@ PAGES = [
     ("Lúa", "species", "Lúa", "Lúa là cây lương thực chính. Cây lúa bị rầy nâu gây hại."),
     ("Lúa_OM5451", "variety", "Lúa", "OM5451 kháng bệnh đạo ôn, năng suất 6-8 tấn/ha."),
     ("Lúa_ST24", "variety", "Lúa", "ST24 kháng bệnh bạc lá, cao 100-110 cm."),
-    ("Lúa_ST25", "variety", "Lúa", "ST25 thời gian sinh trưởng 115 ngày."),
+    ("Lúa_ST25", "variety", "Lúa", "ST25 thời gian sinh trưởng 115 ngày.\n"),
     (
         "Kỹ_thuật_trồng_và_chăm_sóc_lúa",
         "variety",
@@ -170,13 +170,17 @@ class TestExtractPages(unittest.TestCase):
         self.assertEqual(lua["kind"], "species")
         self.assertEqual(lua["crop"], "Lúa")
         self.assertIn("rầy nâu", lua["text"])
+        self.assertEqual(lua["wikitext"], lua["text"])
         om5451 = by_title["Lúa OM5451"]
         self.assertEqual(om5451["kind"], "variety")
         self.assertEqual(om5451["revision_id"], 201)
         self.assertEqual(
             om5451["content_hash"],
-            hashlib.sha256(om5451["text"].encode("utf-8")).hexdigest(),
+            hashlib.sha256(om5451["wikitext"].encode("utf-8")).hexdigest(),
         )
+        st25 = by_title["Lúa ST25"]
+        self.assertTrue(st25["wikitext"].endswith("\n"))
+        self.assertEqual(st25["text"], st25["wikitext"])
         kt = by_title["Kỹ thuật trồng và chăm sóc lúa"]
         # kind=None trong TARGET_PAGES: extractor bỏ qua, worker sẽ fallback
         # về "variety" ở load_pages (hành vi hiện tại cần báo cáo).
@@ -186,6 +190,25 @@ class TestExtractPages(unittest.TestCase):
         pages = real_data_smoke.extract_pages(self.dump)
         self.assertEqual(len(pages), 5)
         self.assertNotIn("Không liên quan", {p["title"] for p in pages})
+
+    def test_custom_targets_can_keep_missing_entries_out(self) -> None:
+        targets = [
+            ("Lúa_ST24", "variety", "Lúa"),
+            ("Lúa_không_tồn_tại", "variety", "Lúa"),
+        ]
+        pages = real_data_smoke.extract_pages(
+            self.dump,
+            targets,
+            allow_missing=True,
+        )
+        self.assertEqual([page["title"] for page in pages], ["Lúa ST24"])
+
+    def test_custom_targets_still_reject_missing_by_default(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "không_tồn_tại"):
+            real_data_smoke.extract_pages(
+                self.dump,
+                [("Lúa_không_tồn_tại", "variety", "Lúa")],
+            )
 
     def test_decode_bytes_hex_utf8(self) -> None:
         raw = bytes.fromhex(hexblob("Lúa OM5451")[2:])
