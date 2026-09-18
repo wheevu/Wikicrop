@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 RAW_INPUT_SCHEMA_VERSION = "1.0"
-EXTRACTOR_VERSION = "2.2.0"
+EXTRACTOR_VERSION = "2.3.0"
 
 # ---------------------------------------------------------------------------
 # Prompt
@@ -538,12 +538,58 @@ HEURISTIC_FIELDS = {
     "variety_type": r"lo[ạa]i gi[ốo]ng",
 }
 
-# Rút gọn câu văn dài thành con số kèm đơn vị.
-CONDENSE_PATTERNS = {
-    "growth_duration": r"\d{2,3}\s*(?:[-–—]\s*\d{2,3}\s*)?ng[àa]y",
-    "plant_height": r"\d{2,3}(?:[.,]\d+)?\s*(?:[-–—]\s*\d{2,3}(?:[.,]\d+)?\s*)?cm",
-    "yield_amount": r"\d{1,3}(?:[.,]\d+)?\s*(?:[-–—]\s*\d{1,3}(?:[.,]\d+)?\s*)?"
-    r"(?:t[ấa]n|t[ạa]|kg)\s*/\s*ha",
+NUMBER_PATTERN = r"\d{1,3}(?:[.,]\d+)?"
+RANGE_CONNECTOR_PATTERN = r"(?:[-–—]|đ[ếe]n)"
+SCALAR_MEASUREMENT_PATTERNS = {
+    "growth_duration": re.compile(
+        rf"(?:t[ừu]\s+)?(?P<low>{NUMBER_PATTERN})"
+        rf"(?:\s*{RANGE_CONNECTOR_PATTERN}\s*(?P<high>{NUMBER_PATTERN}))?"
+        r"\s*(?P<unit>ng[àa]y)",
+        re.IGNORECASE,
+    ),
+    "plant_height": re.compile(
+        rf"(?:t[ừu]\s+)?(?P<low>{NUMBER_PATTERN})"
+        rf"(?:\s*{RANGE_CONNECTOR_PATTERN}\s*(?P<high>{NUMBER_PATTERN}))?"
+        r"\s*(?P<unit>cm)",
+        re.IGNORECASE,
+    ),
+    "yield_amount": re.compile(
+        rf"(?:t[ừu]\s+)?(?P<low>{NUMBER_PATTERN})"
+        rf"(?:\s*{RANGE_CONNECTOR_PATTERN}\s*(?P<high>{NUMBER_PATTERN}))?"
+        r"\s*(?P<unit>t[ấa]n|t[ạa]|kg)"
+        r"(?:\s*/\s*ha|\s+tr[êe]n\s+h[eé]c\s*ta)",
+        re.IGNORECASE,
+    ),
+}
+
+SEASON_PATTERNS = (
+    (re.compile(r"(?:v[ụu]\s+)?[ĐDđd][ôo]ng\s+[Xx]u[âa]n", re.IGNORECASE), "Đông Xuân"),
+    (re.compile(r"(?:v[ụu]\s+)?[Hh][èe]\s+[Tt]hu", re.IGNORECASE), "Hè Thu"),
+    (re.compile(r"(?:v[ụu]\s+)?[Tt]hu\s+[ĐDđd][ôo]ng", re.IGNORECASE), "Thu Đông"),
+    (
+        re.compile(r"(?:v[ụu]\s+[Mm][ùu]a|[Mm][ùu]a(?!\s+v[ụu]))", re.IGNORECASE),
+        "Mùa",
+    ),
+)
+
+SCALAR_CONDITION_PATTERNS = {
+    "growth_duration": (
+        (
+            re.compile(
+                r"t[ùu]y\s+(?:thu[ộo]c\s+)?v[àa]o\s+v[ùu]ng\s+v[àa]\s+m[ùu]a\s+v[ụu]",
+                re.IGNORECASE,
+            ),
+            "tùy vùng và mùa vụ",
+        ),
+    ),
+    "plant_height": (
+        (re.compile(r"m[ộo]t\s+s[ốo]\s+qu[ầa]n\s+th[ểe]", re.IGNORECASE), "một số quần thể"),
+    ),
+    "yield_amount": (
+        (re.compile(r"l[ýy]\s+thuy[ếe]t", re.IGNORECASE), "lý thuyết"),
+        (re.compile(r"trung\s+b[ìi]nh", re.IGNORECASE), "trung bình"),
+        (re.compile(r"th[âa]m\s+canh", re.IGNORECASE), "thâm canh"),
+    ),
 }
 
 # Nguồn gốc lai tạo: chỉ nhận cụm nói rõ lai từ giống nào, tránh bắt nhầm
@@ -588,17 +634,17 @@ WIKITEXT_TAXONOMY = {
 }
 
 
-def extract_wikitext_taxonomy(text: str) -> dict[str, str]:
-    """Read taxonomy fields from WikiCrop's InfoPlant templates."""
+def extract_wikitext_taxonomy_candidates(text: str) -> list[dict[str, Any]]:
+    """Read taxonomy values and exact parameter coordinates from WikiCrop templates."""
     match = re.search(
         r"\{\{\s*(?:InfoPlant1|InfoCropPlant)\b(.*?)\}\}",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
     if not match:
-        return {}
+        return []
 
-    taxonomy: dict[str, str] = {}
+    candidates: list[dict[str, Any]] = []
     for parameter in re.finditer(
         r"\|\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*?)"
         r"(?=\|\s*[A-Za-z][A-Za-z0-9_]*\s*=|\Z)",
@@ -611,33 +657,212 @@ def extract_wikitext_taxonomy(text: str) -> dict[str, str]:
         value = re.sub(r"<[^>]+>", " ", parameter.group(2))
         value = clean_value(value.replace("''", ""))
         if value:
-            taxonomy[key] = value
-    return taxonomy
+            raw_span = parameter.group(0)
+            leading = len(raw_span) - len(raw_span.lstrip())
+            span = raw_span.strip()
+            start = match.start(1) + parameter.start() + leading
+            candidates.append(
+                {
+                    "predicate": key,
+                    "value": value,
+                    "qualifiers": {},
+                    "supporting_span": span,
+                    "source_offset_start": start,
+                    "source_offset_end": start + len(span),
+                }
+            )
+    return candidates
+
+
+def extract_wikitext_taxonomy(text: str) -> dict[str, str]:
+    """Read taxonomy fields from WikiCrop's InfoPlant templates."""
+    return {
+        candidate["predicate"]: candidate["value"]
+        for candidate in extract_wikitext_taxonomy_candidates(text)
+    }
+
+
+def _sentence_bounds(text: str, position: int, max_chars: int = 500) -> tuple[int, int]:
+    left_candidates = [text.rfind(marker, 0, position) for marker in ("\n", ".", "!", "?")]
+    start = max(left_candidates) + 1
+    end_candidates = [
+        found
+        for marker in ("\n", ".", "!", "?")
+        if (found := text.find(marker, position)) != -1
+    ]
+    end = min(end_candidates) + 1 if end_candidates else len(text)
+    if end - start > max_chars:
+        end = min(len(text), start + max_chars)
+    return start, end
+
+
+def _normalize_measurement(predicate: str, match: re.Match[str]) -> str:
+    low = match.group("low")
+    high = match.group("high")
+    unit = match.group("unit").lower()
+    if predicate == "yield_amount":
+        if norm_key(unit) == "tan":
+            unit = "tấn/ha"
+        elif norm_key(unit) == "ta":
+            unit = "tạ/ha"
+        else:
+            unit = "kg/ha"
+    elif predicate == "growth_duration":
+        unit = "ngày"
+    else:
+        unit = "cm"
+    amount = f"{low}-{high}" if high else low
+    return f"{amount} {unit}"
+
+
+def _nearest_qualifier(
+    text: str,
+    match: re.Match[str],
+    patterns: Iterable[tuple[re.Pattern[str], str]],
+    *,
+    prefer_after: bool,
+    allow_fallback: bool = True,
+) -> str:
+    before: list[tuple[int, str]] = []
+    after: list[tuple[int, str]] = []
+    overlapping: list[tuple[int, str]] = []
+    for pattern, value in patterns:
+        for found in pattern.finditer(text):
+            if found.end() <= match.start():
+                distance = match.start() - found.end()
+                before.append((distance, value))
+            elif found.start() >= match.end():
+                distance = found.start() - match.end()
+                after.append((distance, value))
+            else:
+                overlapping.append((0, value))
+    preferred = after if prefer_after else before
+    fallback = before if prefer_after else after
+    candidates = overlapping or preferred or (fallback if allow_fallback else [])
+    return min(candidates, default=(10_000, ""), key=lambda item: item[0])[1]
+
+
+def _season_qualifier(text: str, match: re.Match[str]) -> str:
+    after: list[tuple[int, str]] = []
+    before: list[tuple[int, str]] = []
+    for pattern, value in SEASON_PATTERNS:
+        for found in pattern.finditer(text):
+            if found.start() >= match.end():
+                after.append((found.start(), value))
+            elif found.end() <= match.start():
+                before.append((found.start(), value))
+    selected = after or before
+    values = list(dict.fromkeys(value for _, value in sorted(selected)))
+    return "; ".join(values)
+
+
+def extract_scalar_candidates(page: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract bounded scalar candidates while preserving ranges and qualifiers."""
+    text = str(page.get("wikitext") or page.get("text") or "")
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+
+    for predicate, label_pattern in HEURISTIC_FIELDS.items():
+        if predicate not in SCALAR_MEASUREMENT_PATTERNS:
+            continue
+        measurement_pattern = SCALAR_MEASUREMENT_PATTERNS[predicate]
+        for label in re.finditer(label_pattern, text, flags=re.IGNORECASE):
+            sentence_start, sentence_end = _sentence_bounds(text, label.start())
+            sentence = text[sentence_start:sentence_end]
+            label_end = label.end() - sentence_start
+            measurements = list(measurement_pattern.finditer(sentence, label_end))
+            if not measurements:
+                continue
+            for index, measurement in enumerate(measurements):
+                previous_end = measurements[index - 1].end() if index else label_end
+                next_start = (
+                    measurements[index + 1].start()
+                    if index + 1 < len(measurements)
+                    else len(sentence)
+                )
+                qualifier_context = sentence[previous_end:next_start]
+                local_start = measurement.start() - previous_end
+                local_match = re.compile(re.escape(measurement.group(0))).search(
+                    qualifier_context,
+                    max(0, local_start),
+                )
+                if local_match is None:
+                    local_match = re.compile(re.escape(measurement.group(0))).search(
+                        qualifier_context
+                    )
+                qualifiers: dict[str, str] = {}
+                if local_match is not None:
+                    season = _season_qualifier(qualifier_context, local_match)
+                    condition = _nearest_qualifier(
+                        qualifier_context,
+                        local_match,
+                        SCALAR_CONDITION_PATTERNS.get(predicate, ()),
+                        prefer_after=False,
+                        allow_fallback=len(measurements) == 1,
+                    )
+                    if season:
+                        qualifiers["season"] = season
+                    if condition:
+                        qualifiers["condition"] = condition
+
+                raw_span = sentence
+                leading = len(raw_span) - len(raw_span.lstrip())
+                span = raw_span.strip()
+                span_start = sentence_start + leading
+                candidate = {
+                    "predicate": predicate,
+                    "value": _normalize_measurement(predicate, measurement),
+                    "qualifiers": qualifiers,
+                    "supporting_span": span,
+                    "source_offset_start": span_start,
+                    "source_offset_end": span_start + len(span),
+                }
+                identity = (
+                    predicate,
+                    candidate["value"],
+                    tuple(sorted(qualifiers.items())),
+                    span_start,
+                )
+                if identity not in seen:
+                    seen.add(identity)
+                    candidates.append(candidate)
+            break
+
+    return candidates
+
+
+def render_scalar_properties(candidates: list[dict[str, Any]]) -> dict[str, str]:
+    rendered: dict[str, list[str]] = {}
+    for candidate in candidates:
+        value = str(candidate["value"])
+        qualifiers = candidate.get("qualifiers") or {}
+        suffix = ", ".join(
+            qualifiers[key] for key in ("season", "condition") if qualifiers.get(key)
+        )
+        display = f"{value} ({suffix})" if suffix else value
+        bucket = rendered.setdefault(str(candidate["predicate"]), [])
+        if display not in bucket:
+            bucket.append(display)
+    return {key: "; ".join(values) for key, values in rendered.items()}
 
 
 def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
     """Trích xuất tối thiểu nhưng không bao giờ thất bại."""
     text = page["text"]
     flat = re.sub(r"[ \t]+", " ", text)
-    properties: dict[str, str] = {}
+    scalar_candidates = extract_scalar_candidates(page)
+    properties: dict[str, str] = render_scalar_properties(scalar_candidates)
 
     for key, pattern in HEURISTIC_FIELDS.items():
-        condense = CONDENSE_PATTERNS.get(key)
+        if key in SCALAR_MEASUREMENT_PATTERNS:
+            continue
         value = ""
-        # Nhãn có thể xuất hiện nhiều lần (infobox, mục lục, đoạn văn); duyệt
-        # hết cho tới khi tìm được chỗ thật sự có dữ liệu.
         for label_match in re.finditer(pattern, flat, flags=re.IGNORECASE):
             window = flat[label_match.end() : label_match.end() + 320]
             window = window.lstrip(" \t\n:.-–—")
-            if condense:
-                # Chỉ nhận con số nằm ngay sau đúng nhãn của nó. Quét cả bài
-                # rất dễ nhặt nhầm ("cày sâu 20-25cm" thành chiều cao cây).
-                found = re.search(condense, window, flags=re.IGNORECASE)
-                candidate = clean_value(found.group(0)) if found else ""
-            else:
-                candidate = clean_value(window.split("\n")[0])
-                if norm_key(candidate) in INFOBOX_LABELS:
-                    candidate = ""
+            candidate = clean_value(window.split("\n")[0])
+            if norm_key(candidate) in INFOBOX_LABELS:
+                candidate = ""
             if candidate:
                 value = candidate
                 break
@@ -654,6 +879,15 @@ def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
                 r"\s+(?:t[ạa]i|do|c[ủu]a|n[ăa]m|b[ởo]i|c[óo]\s+"
                 r"(?:[đd][ặa]c\s+t[íi]nh|[đd][ặa]c\s+[đd]i[ểe]m))\s+",
                 match.group(1),
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0]
+        )
+        value = clean_value(
+            re.split(
+                r",?\s+(?:lai\s+c[ổo]\s+truy[ềe]n|kh[ảa]o\s+nghi[ệe]m|"
+                r"[đd][ượu]c\s+c[ôo]ng\s+nh[ậa]n)\b",
+                value,
                 maxsplit=1,
                 flags=re.IGNORECASE,
             )[0]
@@ -717,16 +951,35 @@ def heuristic_entity(page: dict[str, str]) -> dict[str, Any]:
         # Xét ngữ cảnh ~130 ký tự trước MỌI lần xuất hiện của tên sâu bệnh.
         resistant_votes = 0
         susceptible_votes = 0
+        resistant_levels: list[str] = []
+        susceptible_levels: list[str] = []
         for match in re.finditer(re.escape(alias), flat_key):
             context = flat_key[max(0, match.start() - 130) : match.start()]
+            following = flat_key[match.end() : match.end() + 50]
+            level_match = re.search(r"(?:o\s+)?cap\s+(\d+(?:\s*[-–]\s*\d+)?)", following)
+            level = f"Cấp {level_match.group(1)}" if level_match else ""
             if any(norm_key(hint) in context for hint in SUSCEPTIBLE_HINTS):
                 susceptible_votes += 1
+                if level:
+                    susceptible_levels.append(level)
             elif any(norm_key(hint) in context for hint in RESISTANCE_HINTS):
                 resistant_votes += 1
+                if level:
+                    resistant_levels.append(level)
         if resistant_votes >= susceptible_votes and resistant_votes > 0:
-            resistant.append({"name": canonical, "level": ""})
+            resistant.append(
+                {
+                    "name": canonical,
+                    "level": resistant_levels[0] if resistant_levels else "",
+                }
+            )
         elif susceptible_votes > 0:
-            susceptible.append({"name": canonical, "level": ""})
+            susceptible.append(
+                {
+                    "name": canonical,
+                    "level": susceptible_levels[0] if susceptible_levels else "",
+                }
+            )
         else:
             pests.append(canonical)
 
@@ -894,6 +1147,33 @@ def pest_evidence_terms(name: str) -> list[str]:
     return terms
 
 
+def source_span_evidence(
+    page: dict[str, Any],
+    supporting_span: str,
+    source_offset_start: int,
+    source_offset_end: int,
+    *,
+    extraction_method: str,
+    extractor_version: str,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "page_id": page.get("page_id"),
+        "revision_id": page.get("revision_id"),
+        "content_hash": clean_value(page.get("content_hash")),
+        "page_title": clean_value(page.get("title")),
+        "extraction_method": extraction_method,
+        "extractor_version": extractor_version,
+        "location_type": "source_span",
+        "source_offset_start": source_offset_start,
+        "source_offset_end": source_offset_end,
+        "supporting_span": supporting_span,
+        "span_hash": hashlib.sha256(supporting_span.encode("utf-8")).hexdigest(),
+    }
+    identity = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+    evidence["evidence_id"] = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return evidence
+
+
 def claim_evidence(
     page: dict[str, Any],
     terms: Iterable[str],
@@ -997,6 +1277,7 @@ def create_candidate_claims(
         page_identity: bool = False,
         relationship_hints: Iterable[str] = (),
         opposing_hints: Iterable[str] = (),
+        exact_span: dict[str, Any] | None = None,
     ) -> None:
         subject_id = clean_value(subject_id)
         object_id = clean_value(object_id)
@@ -1031,15 +1312,25 @@ def create_candidate_claims(
                 "review": {"status": "pending"},
             },
         )
-        evidence = claim_evidence(
-            page,
-            evidence_terms,
-            extraction_method=extraction_method,
-            extractor_version=extractor_version,
-            page_identity=page_identity,
-            relationship_hints=relationship_hints,
-            opposing_hints=opposing_hints,
-        )
+        if exact_span is not None:
+            evidence = source_span_evidence(
+                page,
+                str(exact_span["supporting_span"]),
+                int(exact_span["source_offset_start"]),
+                int(exact_span["source_offset_end"]),
+                extraction_method=extraction_method,
+                extractor_version=extractor_version,
+            )
+        else:
+            evidence = claim_evidence(
+                page,
+                evidence_terms,
+                extraction_method=extraction_method,
+                extractor_version=extractor_version,
+                page_identity=page_identity,
+                relationship_hints=relationship_hints,
+                opposing_hints=opposing_hints,
+            )
         evidence_ids = {item["evidence_id"] for item in claim["evidence"]}
         if evidence["evidence_id"] not in evidence_ids:
             claim["evidence"].append(evidence)
@@ -1065,6 +1356,12 @@ def create_candidate_claims(
         )
 
         taxonomy = normalize_taxonomy(entity.get("taxonomy"))
+        taxonomy_candidates = {
+            candidate["predicate"]: candidate
+            for candidate in extract_wikitext_taxonomy_candidates(
+                str(page.get("wikitext") or page.get("text") or "")
+            )
+        }
         properties = entity.get("properties")
         properties = properties if isinstance(properties, dict) else {}
         for key, value in taxonomy.items():
@@ -1077,11 +1374,16 @@ def create_candidate_claims(
                 page,
                 value=value,
                 evidence_terms=[value],
+                exact_span=taxonomy_candidates.get(key),
             )
 
         if kind != "species":
             for key in CANDIDATE_PROPERTY_KEYS:
-                if key in taxonomy or key not in properties:
+                if (
+                    key in taxonomy
+                    or key in SCALAR_MEASUREMENT_PATTERNS
+                    or key not in properties
+                ):
                     continue
                 value = clean_value(properties.get(key))
                 terms = [value]
@@ -1094,6 +1396,16 @@ def create_candidate_claims(
                     page,
                     value=value,
                     evidence_terms=terms,
+                )
+            for scalar in extract_scalar_candidates(page):
+                add_claim(
+                    subject_type,
+                    subject_id,
+                    str(scalar["predicate"]),
+                    page,
+                    value=str(scalar["value"]),
+                    qualifiers=dict(scalar.get("qualifiers") or {}),
+                    exact_span=scalar,
                 )
 
         resistant = as_pest_list(entity.get("resistant_to"))
@@ -1134,7 +1446,7 @@ def create_candidate_claims(
                         SUSCEPTIBLE_HINTS if relation == "RESISTANT_TO" else ()
                     ),
                 )
-        if crop:
+        if kind == "species" and crop:
             crop_pests = mentioned + [item["name"] for item in resistant + susceptible]
             for pest_name in dict.fromkeys(name for name in crop_pests if name):
                 add_claim(
@@ -1607,18 +1919,6 @@ def build_graph(
                 item["name"],
                 {"level": item["level"]} if item["level"] else {},
             )
-
-        # Mọi sâu bệnh xuất hiện ở trang giống cũng là sâu bệnh của loài.
-        crop_pests = [canonical_pest(pest) for pest in as_list(entity.get("pests"))]
-        crop_pests += [item["name"] for item in resistant_items + susceptible_items]
-        for pest_name in crop_pests:
-            if not pest_name:
-                continue
-            graph.add_node("Pest", pest_name)
-            if crop:
-                graph.add_edge(
-                    "Crop", crop, "AFFECTED_BY", "Pest", pest_name
-                )
 
     # Một cặp (giống, sâu bệnh) không thể vừa kháng vừa nhiễm: giữ lại cạnh
     # có ghi mức độ, nếu cả hai đều không ghi thì ưu tiên "kháng".

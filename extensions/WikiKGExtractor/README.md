@@ -1,4 +1,4 @@
-# WikiKGExtractor 2.2.0
+# WikiKGExtractor 2.3.0
 
 **WikiKGExtractor** là tiện ích mở rộng (extension) cho MediaWiki, được xây dựng cho hệ thống **Wikicrop**. Extension cho phép nhập tên một loài cây, thu thập nội dung trang loài và các trang giống thuộc mục **Danh sách/Giống**, sau đó xuất dữ liệu và tùy chọn xây dựng **Knowledge Graph** để lưu trữ trên **Neo4j**.
 
@@ -25,8 +25,12 @@ WikiKGExtractor/
 ├── schema/
 │   ├── candidate-claims.v1.schema.json
 │   ├── corpus-manifest.v1.schema.json
+│   ├── evaluation-protocol.v1.schema.json
+│   ├── evaluation-report.v1.schema.json
 │   ├── graph-document.v1.schema.json
 │   └── raw-data.v1.schema.json
+├── protocol/
+│   └── rice-engineering-pilot.v1.json
 ├── src/
 │   ├── ExportWriter.php
 │   ├── Hooks.php
@@ -35,6 +39,7 @@ WikiKGExtractor/
 │   ├── SpecialWikiKGExtractor.php
 │   └── GraphDocument.php
 ├── tools/
+│   ├── evaluate_pilot.py
 │   ├── real_data_smoke.py
 │   └── rice_corpus.py
 ├── tests/
@@ -328,3 +333,23 @@ It then selects 10 held-out pages after excluding the development set and every 
 The exclusion register is stored in the manifest so a previously observed page cannot silently enter the held-out split.
 
 Do not inspect or tune rules against `raw-data.test.v1.json` before the rule version and evaluation protocol are frozen.
+
+## 11. Frozen rules-only engineering pilot
+
+The frozen rice pilot is defined by `protocol/rice-engineering-pilot.v1.json` and documented in `docs/knowledge-graph-pilot-protocol.md`.
+The evaluator verifies pinned artifact hashes, JSON schemas, source records, exact evidence offsets, graph invariants, and byte-identical output under `PYTHONHASHSEED=0` and `1`.
+It rejects output directories inside the repository.
+
+```bash
+python3 extensions/WikiKGExtractor/tools/evaluate_pilot.py \
+    --protocol extensions/WikiKGExtractor/protocol/rice-engineering-pilot.v1.json \
+    --manifest <private-corpus-manifest.json> \
+    --input <private-development-input.json> \
+    --output-dir <private-output-directory> \
+    --split development
+```
+
+Detailed run outputs remain private and outside Git.
+The aggregate report does not include page text or evidence spans.
+Do not run the held-out split without explicit approval after reviewing the freeze packet.
+After approval, the held-out command also requires `--confirm-heldout-approved`.

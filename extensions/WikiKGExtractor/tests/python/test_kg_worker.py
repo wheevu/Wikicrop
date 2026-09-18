@@ -441,6 +441,137 @@ class TestHeuristicEntity(unittest.TestCase):
         entity = kg_worker.heuristic_entity(page)
         self.assertEqual(entity["properties"]["plant_height"], "100-110 cm")
 
+    def test_vietnamese_range_connector_preserves_both_endpoints(self) -> None:
+        text = (
+            "Giống lúa X có thời gian sinh trưởng từ 95 đến 100 ngày, "
+            "chiều cao cây từ 90 đến 105 cm."
+        )
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        entity = kg_worker.heuristic_entity(page)
+        self.assertEqual(entity["properties"]["growth_duration"], "95-100 ngày")
+        self.assertEqual(entity["properties"]["plant_height"], "90-105 cm")
+
+    def test_seasonal_values_remain_separate_and_qualified(self) -> None:
+        text = (
+            "Năng suất đạt từ 6 đến 8 tấn/ha trong vụ Đông Xuân và "
+            "từ 4 đến 5,5 tấn/ha trong vụ Hè Thu."
+        )
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        candidates = kg_worker.extract_scalar_candidates(page)
+        self.assertEqual(
+            [(item["value"], item["qualifiers"]) for item in candidates],
+            [
+                ("6-8 tấn/ha", {"season": "Đông Xuân"}),
+                ("4-5,5 tấn/ha", {"season": "Hè Thu"}),
+            ],
+        )
+        self.assertEqual(
+            kg_worker.heuristic_entity(page)["properties"]["yield_amount"],
+            "6-8 tấn/ha (Đông Xuân); 4-5,5 tấn/ha (Hè Thu)",
+        )
+
+    def test_scalar_offsets_use_unmodified_wikitext(self) -> None:
+        text = "Năng suất đạt từ \u200b6 đến 8 tấn/ha."
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        candidate = kg_worker.extract_scalar_candidates(page)[0]
+        self.assertEqual(candidate["value"], "6-8 tấn/ha")
+        self.assertEqual(
+            text[
+                candidate["source_offset_start"] : candidate["source_offset_end"]
+            ],
+            candidate["supporting_span"],
+        )
+
+    def test_conditional_values_keep_their_own_qualifiers(self) -> None:
+        text = (
+            "Năng suất trung bình đạt từ 5,5 đến 6 tấn/ha, trong điều kiện "
+            "thâm canh tốt có thể đạt từ 6,5 đến 7 tấn/ha."
+        )
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        candidates = kg_worker.extract_scalar_candidates(page)
+        self.assertEqual(
+            [(item["value"], item["qualifiers"]) for item in candidates],
+            [
+                ("5,5-6 tấn/ha", {"condition": "trung bình"}),
+                ("6,5-7 tấn/ha", {"condition": "thâm canh"}),
+            ],
+        )
+
+    def test_mua_vu_phrase_is_a_condition_not_a_season(self) -> None:
+        text = (
+            "Thời gian sinh trưởng từ 95 đến 105 ngày, "
+            "tùy thuộc vào vùng và mùa vụ."
+        )
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        candidate = kg_worker.extract_scalar_candidates(page)[0]
+        self.assertEqual(
+            candidate["qualifiers"],
+            {"condition": "tùy vùng và mùa vụ"},
+        )
+
+    def test_relationship_levels_are_preserved_per_pest(self) -> None:
+        text = "Giống lúa X có khả năng kháng đạo ôn ở cấp 7 và rầy nâu ở cấp 6."
+        page = {
+            "title": "Lúa_X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        entity = kg_worker.heuristic_entity(page)
+        self.assertEqual(
+            entity["resistant_to"],
+            [
+                {"name": "Bệnh đạo ôn", "level": "Cấp 7"},
+                {"name": "Rầy nâu", "level": "Cấp 6"},
+            ],
+        )
+
+    def test_crossbred_value_stops_before_method_metadata(self) -> None:
+        text = (
+            "OMCS2000 được chọn tạo từ tổ hợp lai OM1723/MRC19399, "
+            "lai cổ truyền năm 1996, khảo nghiệm từ 1999."
+        )
+        page = {
+            "title": "Lúa_OMCS2000",
+            "kind": "variety",
+            "crop": "Lúa",
+            "text": text,
+            "wikitext": text,
+        }
+        entity = kg_worker.heuristic_entity(page)
+        self.assertEqual(entity["properties"]["crossbred_from"], "OM1723/MRC19399")
+
     def test_template_markup_excluded_from_embedding_text(self) -> None:
         page = {
             "title": "Lúa_X",
@@ -717,6 +848,70 @@ class TestCandidateClaims(unittest.TestCase):
             ["Lúa OM1"],
         )
 
+    def test_scalar_qualifiers_create_distinct_claims_with_exact_evidence(self) -> None:
+        text = (
+            "Năng suất đạt từ 6 đến 8 tấn/ha trong vụ Đông Xuân và "
+            "từ 4 đến 5,5 tấn/ha trong vụ Hè Thu."
+        )
+        page = {
+            "title": "Lúa X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "page_id": 1,
+            "revision_id": 2,
+            "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "text": text,
+            "wikitext": text,
+        }
+        entity = kg_worker.heuristic_entity(page)
+        document = kg_worker.create_candidate_claims(
+            [entity],
+            [page],
+            extraction_method="rules",
+            extractor_version="test",
+        )
+        claims = [
+            claim
+            for claim in document["claims"]
+            if claim["predicate"] == "yield_amount"
+        ]
+        self.assertEqual(len(claims), 2)
+        self.assertEqual(
+            {(claim["value"], claim["qualifiers"]["season"]) for claim in claims},
+            {("6-8 tấn/ha", "Đông Xuân"), ("4-5,5 tấn/ha", "Hè Thu")},
+        )
+        self.assertEqual(len({claim["claim_id"] for claim in claims}), 2)
+        for claim in claims:
+            evidence = claim["evidence"][0]
+            self.assertEqual(evidence["location_type"], "source_span")
+            self.assertEqual(
+                text[evidence["source_offset_start"] : evidence["source_offset_end"]],
+                evidence["supporting_span"],
+            )
+
+    def test_variety_pest_relation_does_not_imply_crop_affected_by(self) -> None:
+        text = "Giống lúa X kháng bệnh đạo ôn tốt."
+        page = {
+            "title": "Lúa X",
+            "kind": "variety",
+            "crop": "Lúa",
+            "page_id": 1,
+            "revision_id": 2,
+            "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "text": text,
+            "wikitext": text,
+        }
+        entity = kg_worker.heuristic_entity(page)
+        document = kg_worker.create_candidate_claims(
+            [entity],
+            [page],
+            extraction_method="rules",
+            extractor_version="test",
+        )
+        predicates = {claim["predicate"] for claim in document["claims"]}
+        self.assertIn("RESISTANT_TO", predicates)
+        self.assertNotIn("AFFECTED_BY", predicates)
+
 
 class TestBuildGraph(unittest.TestCase):
     def test_full_fixture_graph_shape(self) -> None:
@@ -739,7 +934,7 @@ class TestBuildGraph(unittest.TestCase):
         )
         self.assertEqual(crop_node["properties"]["scientific_name"], "Oryza sativa")
         self.assertEqual(crop_node["properties"]["variety_count"], "3")
-        self.assertEqual(crop_node["properties"]["pest_count"], "4")
+        self.assertEqual(crop_node["properties"]["pest_count"], "2")
 
         om5451 = next(
             node
@@ -756,10 +951,10 @@ class TestBuildGraph(unittest.TestCase):
             edge for edge in graph.edge_list() if edge["type"] == "AFFECTED_BY"
         ]
         self.assertEqual(len(has_variety), 3)
-        self.assertEqual(len(affected_by), 4)
+        self.assertEqual(len(affected_by), 2)
         self.assertEqual(
             {edge["target"] for edge in affected_by},
-            {"Bệnh đạo ôn", "Rầy nâu", "Bệnh bạc lá", "Bệnh khô vằn"},
+            {"Bệnh đạo ôn", "Rầy nâu"},
         )
 
     def test_missing_variety_properties_filled_with_unknown(self) -> None:

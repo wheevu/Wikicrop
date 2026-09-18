@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/evaluation-protocol.v1.schema.json",
+  "title": "WikiKGExtractor rules-only pilot protocol",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "protocol_id",
+    "extractor",
+    "artifacts",
+    "ontology",
+    "evaluation",
+    "privacy",
+    "rerun_policy"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "protocol_id": { "type": "string", "minLength": 1 },
+    "extractor": {
+      "type": "object",
+      "required": ["version", "method", "worker_sha256", "evaluator_sha256"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "method": { "const": "rules" },
+        "worker_sha256": { "$ref": "#/$defs/sha256" },
+        "evaluator_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "manifest_sha256",
+        "development_input_sha256",
+        "heldout_input_sha256",
+        "schema_sha256"
+      ],
+      "properties": {
+        "manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "development_input_sha256": { "$ref": "#/$defs/sha256" },
+        "heldout_input_sha256": { "$ref": "#/$defs/sha256" },
+        "schema_sha256": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/sha256" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ontology": {
+      "type": "object",
+      "required": [
+        "entity_types",
+        "relationship_predicates",
+        "scalar_predicates",
+        "qualifier_keys"
+      ],
+      "properties": {
+        "entity_types": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "relationship_predicates": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "scalar_predicates": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "qualifier_keys": { "$ref": "#/$defs/uniqueStrings" }
+      },
+      "additionalProperties": false
+    },
+    "evaluation": {
+      "type": "object",
+      "required": [
+        "hash_seeds",
+        "deterministic_outputs",
+        "reported_metrics",
+        "forbidden_metrics"
+      ],
+      "properties": {
+        "hash_seeds": {
+          "type": "array",
+          "const": [0, 1]
+        },
+        "deterministic_outputs": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "reported_metrics": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "forbidden_metrics": { "$ref": "#/$defs/nonEmptyUniqueStrings" }
+      },
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "required": ["output_outside_repository", "aggregate_report_only"],
+      "properties": {
+        "output_outside_repository": { "const": true },
+        "aggregate_report_only": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "rerun_policy": {
+      "type": "object",
+      "required": ["identical_retry_only_after_infrastructure_failure", "no_tuning_after_results"],
+      "properties": {
+        "identical_retry_only_after_infrastructure_failure": { "const": true },
+        "no_tuning_after_results": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "uniqueStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "nonEmptyUniqueStrings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  }
+}
