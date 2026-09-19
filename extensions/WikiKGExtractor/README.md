@@ -353,3 +353,43 @@ Detailed run outputs remain private and outside Git.
 The aggregate report does not include page text or evidence spans.
 Do not run the held-out split without explicit approval after reviewing the freeze packet.
 After approval, the held-out command also requires `--confirm-heldout-approved`.
+
+## 12. Supervisor check and browser visualization
+
+The committed synthetic fixture provides a quick rules-only check without Gemini, Neo4j, or private WikiCrop data.
+
+```bash
+OUT="${TMPDIR:-/tmp}/wikicrop-kg-demo"
+python3 extensions/WikiKGExtractor/bin/kg_worker.py \
+    --input extensions/WikiKGExtractor/tests/fixtures/raw-data.rules.json \
+    --output-dir "$OUT" \
+    --no-ai
+```
+
+The expected result is 8 nodes and 11 relationships from one crop, three varieties, and four pests.
+The worker also produces 26 pending candidate claims, of which 24 have complete evidence coordinates in this synthetic fixture.
+It safely skips the unrelated cultivation page.
+
+To inspect the real MediaWiki and Cytoscape visualization from a clean clone, install and start Docker Desktop, then run:
+
+```bash
+python3 extensions/WikiKGExtractor/tools/wikikg_demo.py start
+```
+
+The first run builds the MediaWiki development image with Python 3, installs a local SQLite wiki, enables WikiKGExtractor in rules-only mode, and loads the synthetic rice pages.
+It starts only the MediaWiki PHP and web services on `http://localhost:8088`.
+It does not start Keycloak, call Gemini, write to Neo4j, or use the private development and held-out corpora.
+
+Open the URL printed by the command and sign in with the printed local demo credentials.
+Enter `Lúa`, select **Tạo Knowledge Graph**, and run the extraction.
+The result page renders the production Cytoscape graph, node cards, relationship table, and revision-pinned source table.
+
+Check the service state or stop the demo with:
+
+```bash
+python3 extensions/WikiKGExtractor/tools/wikikg_demo.py status
+python3 extensions/WikiKGExtractor/tools/wikikg_demo.py stop
+```
+
+The demo refuses to alter an existing non-demo `LocalSettings.php`.
+Use a clean clone when another WikiCrop installation already occupies the repository directory.

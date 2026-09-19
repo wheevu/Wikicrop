@@ -274,7 +274,8 @@ class GraphDocument {
 						. Html::element(
 							'p',
 							[ 'class' => 'wikikg-note' ],
-							'Dùng danh sách node và bảng quan hệ bên dưới để đọc bằng bàn phím.'
+							'Chọn một đường nối để xem tên quan hệ. '
+								. 'Dùng danh sách node và bảng bên dưới để đọc bằng bàn phím.'
 						)
 				)
 				. Html::element(

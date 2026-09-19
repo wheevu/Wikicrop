@@ -17,6 +17,35 @@ QUnit.test( 'makeElements accepts missing edge data', function ( assert ) {
 	assert.deepEqual( mw.wikikgGraph.makeElements( { nodes: nodes } ), nodes );
 } );
 
+QUnit.test( 'makeLayout gives small typed graphs semantic rings', function ( assert ) {
+	var layout = mw.wikikgGraph.makeLayout( {
+		nodes: [ { data: { id: 'n-crop' } } ],
+		edges: []
+	} );
+	var crop = { data: function () {
+		return 'Crop';
+	} };
+	var variety = { data: function () {
+		return 'Variety';
+	} };
+	var pest = { data: function () {
+		return 'Pest';
+	} };
+
+	assert.strictEqual( layout.name, 'concentric' );
+	assert.strictEqual( layout.concentric( crop ), 3 );
+	assert.strictEqual( layout.concentric( variety ), 2 );
+	assert.strictEqual( layout.concentric( pest ), 1 );
+} );
+
+QUnit.test( 'makeLayout keeps large graphs on the force-directed layout', function ( assert ) {
+	var nodes = Array.from( { length: 31 }, function ( unused, index ) {
+		return { data: { id: 'n-' + index } };
+	} );
+
+	assert.strictEqual( mw.wikikgGraph.makeLayout( { nodes: nodes } ).name, 'cose' );
+} );
+
 QUnit.test( 'init reveals the graph before Cytoscape measures it', function ( assert ) {
 	var originalCytoscape = window.cytoscape;
 	var fixture = document.getElementById( 'qunit-fixture' );
