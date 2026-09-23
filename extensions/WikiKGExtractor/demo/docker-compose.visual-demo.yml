@@ -7,3 +7,5 @@ services:
       dockerfile: extensions/WikiKGExtractor/demo/python3.dockerfile
   mediawiki-web:
     platform: linux/amd64
+    ports: !override
+      - "127.0.0.1:${MW_DOCKER_PORT:-8088}:8080"

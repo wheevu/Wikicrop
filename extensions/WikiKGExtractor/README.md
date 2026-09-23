@@ -1,4 +1,4 @@
-# WikiKGExtractor 2.3.0
+# WikiKGExtractor 2.3.1 review candidate
 
 **WikiKGExtractor** là tiện ích mở rộng (extension) cho MediaWiki, được xây dựng cho hệ thống **Wikicrop**. Extension cho phép nhập tên một loài cây, thu thập nội dung trang loài và các trang giống thuộc mục **Danh sách/Giống**, sau đó xuất dữ liệu và tùy chọn xây dựng **Knowledge Graph** để lưu trữ trên **Neo4j**.
 
@@ -336,13 +336,14 @@ Do not inspect or tune rules against `raw-data.test.v1.json` before the rule ver
 
 ## 11. Frozen rules-only engineering pilot
 
-The frozen rice pilot is defined by `protocol/rice-engineering-pilot.v1.json` and documented in `docs/knowledge-graph-pilot-protocol.md`.
+The historical 2.3.0 rice pilot is frozen in `protocol/rice-engineering-pilot.v1.json` and documented in `docs/knowledge-graph-pilot-protocol.md`.
+The 2.3.1 successor candidate is pinned in `protocol/rice-engineering-pilot.v2.json`; it keeps the same evaluator, schemas, and private corpus hashes, and changes only the worker version and hash.
 The evaluator verifies pinned artifact hashes, JSON schemas, source records, exact evidence offsets, graph invariants, and byte-identical output under `PYTHONHASHSEED=0` and `1`.
 It rejects output directories inside the repository.
 
 ```bash
 python3 extensions/WikiKGExtractor/tools/evaluate_pilot.py \
-    --protocol extensions/WikiKGExtractor/protocol/rice-engineering-pilot.v1.json \
+    --protocol extensions/WikiKGExtractor/protocol/rice-engineering-pilot.v2.json \
     --manifest <private-corpus-manifest.json> \
     --input <private-development-input.json> \
     --output-dir <private-output-directory> \
@@ -375,6 +376,9 @@ To inspect the real MediaWiki and Cytoscape visualization from a clean clone, in
 ```bash
 python3 extensions/WikiKGExtractor/tools/wikikg_demo.py start
 ```
+
+The helper requires Docker Compose v2.24.4 or newer and rejects older versions because the demo needs Compose's `!override` port behavior.
+The web port binds only to `127.0.0.1`, and each checkout gets a distinct, stable Compose project name.
 
 The first run builds the MediaWiki development image with Python 3, installs a local SQLite wiki, enables WikiKGExtractor in rules-only mode, and loads the synthetic rice pages.
 It starts only the MediaWiki PHP and web services on `http://localhost:8088`.

@@ -14,12 +14,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 EXTENSION_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(EXTENSION_ROOT / "bin"))
 
 import kg_worker  # noqa: E402
+
+sys.path.insert(0, str(EXTENSION_ROOT / "tools"))
+import evaluate_pilot  # noqa: E402
 
 FIXTURES = EXTENSION_ROOT / "tests" / "fixtures"
 RAW_DATA_RULES = FIXTURES / "raw-data.rules.json"
@@ -801,8 +805,8 @@ class TestCandidateClaims(unittest.TestCase):
         entity = make_entity(
             "OM1",
             "Lúa",
-            resistant=[{"name": "Rầy nâu", "level": ""}],
-            susceptible=[{"name": "Rầy nâu", "level": ""}],
+            resistant=[{"name": "Rầy nâu", "level": "Cấp 1"}],
+            susceptible=[{"name": "Rầy nâu", "level": "Cấp 5"}],
         )
         page = {
             "title": "Lúa OM1",
@@ -820,13 +824,22 @@ class TestCandidateClaims(unittest.TestCase):
             extraction_method="rules",
             extractor_version="test",
         )
-        predicates = {
-            claim["predicate"]
+        relationship_claims = {
+            claim["predicate"]: claim
             for claim in document["claims"]
             if claim["subject"]["type"] == "Variety"
         }
-        self.assertIn("RESISTANT_TO", predicates)
-        self.assertIn("SUSCEPTIBLE_TO", predicates)
+        self.assertEqual(
+            set(relationship_claims), {"RESISTANT_TO", "SUSCEPTIBLE_TO"}
+        )
+        self.assertEqual(
+            relationship_claims["RESISTANT_TO"]["qualifiers"], {"level": "Cấp 1"}
+        )
+        self.assertEqual(
+            relationship_claims["SUSCEPTIBLE_TO"]["qualifiers"], {"level": "Cấp 5"}
+        )
+        for claim in relationship_claims.values():
+            self.assertEqual(claim["review"], {"status": "pending"})
 
     def test_pages_without_revision_provenance_do_not_create_claims(self) -> None:
         page = {
@@ -965,56 +978,137 @@ class TestBuildGraph(unittest.TestCase):
                       "characteristics", "crossbred_from"):
             self.assertEqual(node["properties"][field], "Chưa rõ", msg=field)
 
-    def test_conflict_keeps_single_edge_and_warns(self) -> None:
-        entity = make_entity(
-            "X",
-            "Lúa",
-            resistant=[{"name": "Bệnh đạo ôn"}],
-            susceptible=[{"name": "Bệnh đạo ôn"}],
+    def test_conflicts_preserve_both_edges_and_candidate_invariant_at_all_levels(
+        self,
+    ) -> None:
+        protocol = json.loads(
+            (EXTENSION_ROOT / "protocol" / "rice-engineering-pilot.v1.json").read_text(
+                encoding="utf-8"
+            )
         )
-        graph, warnings = build_variety_graph([entity])
-        edges = [
-            edge
-            for edge in graph.edge_list()
-            if edge["type"] in ("RESISTANT_TO", "SUSCEPTIBLE_TO")
-        ]
-        self.assertEqual(len(edges), 1)
-        self.assertEqual(edges[0]["type"], "RESISTANT_TO")
-        self.assertTrue(any("Mâu thuẫn" in w for w in warnings))
+        protocol["extractor"]["version"] = kg_worker.EXTRACTOR_VERSION
+        text = "Giống OM1 kháng rầy nâu nhưng cũng ghi nhận nhiễm rầy nâu."
+        page = {
+            "title": "Lúa OM1",
+            "kind": "variety",
+            "crop": "Lúa",
+            "page_id": 1,
+            "revision_id": 2,
+            "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "text": text,
+            "wikitext": text,
+        }
+        level_cases = (
+            ("", ""),
+            ("Cấp 1", ""),
+            ("", "Cấp 5"),
+            ("Cấp 1", "Cấp 5"),
+        )
 
-    def test_conflict_prefers_leveled_edge(self) -> None:
-        # Cả hai đều có level -> giữ kháng.
-        entity = make_entity(
-            "X",
-            "Lúa",
-            resistant=[{"name": "Bệnh đạo ôn", "level": "Cấp 1"}],
-            susceptible=[{"name": "Bệnh đạo ôn", "level": "Cấp 5"}],
-        )
-        graph, _ = build_variety_graph([entity])
-        edges = [
-            edge
-            for edge in graph.edge_list()
-            if edge["type"] in ("RESISTANT_TO", "SUSCEPTIBLE_TO")
-        ]
-        self.assertEqual(len(edges), 1)
-        self.assertEqual(edges[0]["type"], "RESISTANT_TO")
-        self.assertEqual(edges[0]["properties"]["level"], "Cấp 1")
+        for resistant_level, susceptible_level in level_cases:
+            with self.subTest(
+                resistant_level=resistant_level,
+                susceptible_level=susceptible_level,
+            ):
+                entity = make_entity(
+                    "OM1",
+                    "Lúa",
+                    page_title="Lúa OM1",
+                    resistant=[{"name": "Rầy nâu", "level": resistant_level}],
+                    susceptible=[{"name": "Rầy nâu", "level": susceptible_level}],
+                )
+                candidates = kg_worker.create_candidate_claims(
+                    [entity],
+                    [page],
+                    extraction_method="rules",
+                    extractor_version=kg_worker.EXTRACTOR_VERSION,
+                )
+                graph, warnings = kg_worker.build_graph([entity], [page], "Lúa")
+                graph_document = kg_worker.create_nodes_edges(
+                    graph,
+                    {
+                        "extractor_version": kg_worker.EXTRACTOR_VERSION,
+                        "extraction_method": "rules",
+                        "source_pages": [
+                            {
+                                key: page[key]
+                                for key in (
+                                    "title",
+                                    "page_id",
+                                    "revision_id",
+                                    "content_hash",
+                                )
+                            }
+                        ],
+                    },
+                )
+                edges = [
+                    edge
+                    for edge in graph_document["edges"]
+                    if edge["type"] in ("RESISTANT_TO", "SUSCEPTIBLE_TO")
+                ]
+                relationship_claims = [
+                    claim
+                    for claim in candidates["claims"]
+                    if claim["claim_type"] == "relationship"
+                    and claim["predicate"] in ("RESISTANT_TO", "SUSCEPTIBLE_TO")
+                ]
 
-    def test_conflict_keeps_only_leveled_susceptible(self) -> None:
-        entity = make_entity(
-            "X",
-            "Lúa",
-            resistant=[{"name": "Bệnh đạo ôn"}],
-            susceptible=[{"name": "Bệnh đạo ôn", "level": "Cấp 5"}],
-        )
-        graph, _ = build_variety_graph([entity])
-        edges = [
-            edge
-            for edge in graph.edge_list()
-            if edge["type"] in ("RESISTANT_TO", "SUSCEPTIBLE_TO")
-        ]
-        self.assertEqual(len(edges), 1)
-        self.assertEqual(edges[0]["type"], "SUSCEPTIBLE_TO")
+                self.assertEqual(
+                    {edge["type"] for edge in edges},
+                    {"RESISTANT_TO", "SUSCEPTIBLE_TO"},
+                )
+                self.assertEqual(len(relationship_claims), 2)
+                self.assertEqual(
+                    {
+                        (
+                            edge["source_type"],
+                            edge["source"],
+                            edge["type"],
+                            edge["target_type"],
+                            edge["target"],
+                        )
+                        for edge in graph_document["edges"]
+                    },
+                    {
+                        (
+                            claim["subject"]["type"],
+                            claim["subject"]["id"],
+                            claim["predicate"],
+                            claim["object"]["type"],
+                            claim["object"]["id"],
+                        )
+                        for claim in candidates["claims"]
+                        if claim["claim_type"] == "relationship"
+                    },
+                )
+                edge_levels = {
+                    edge["type"]: edge["properties"].get("level", "")
+                    for edge in edges
+                }
+                self.assertEqual(edge_levels["RESISTANT_TO"], resistant_level)
+                self.assertEqual(edge_levels["SUSCEPTIBLE_TO"], susceptible_level)
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("Mâu thuẫn", warnings[0])
+                self.assertIn("cả hai quan hệ được giữ lại", warnings[0])
+
+                summary = {
+                    "node_count": len(graph_document["nodes"]),
+                    "edge_count": len(graph_document["edges"]),
+                    "candidate_claim_count": len(candidates["claims"]),
+                    "page_count": len(graph_document["metadata"]["source_pages"]),
+                    "nodes_by_label": dict(
+                        Counter(node["type"] for node in graph_document["nodes"])
+                    ),
+                    "edges_by_type": dict(
+                        Counter(edge["type"] for edge in graph_document["edges"])
+                    ),
+                }
+                self.assertTrue(
+                    evaluate_pilot.graph_invariants_valid(
+                        protocol, candidates, graph_document, summary
+                    )
+                )
 
     def test_duplicate_variety_pages_dedup(self) -> None:
         entities = [

@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 RAW_INPUT_SCHEMA_VERSION = "1.0"
-EXTRACTOR_VERSION = "2.3.0"
+EXTRACTOR_VERSION = "2.3.1"
 
 # ---------------------------------------------------------------------------
 # Prompt
@@ -1920,8 +1920,8 @@ def build_graph(
                 {"level": item["level"]} if item["level"] else {},
             )
 
-    # Một cặp (giống, sâu bệnh) không thể vừa kháng vừa nhiễm: giữ lại cạnh
-    # có ghi mức độ, nếu cả hai đều không ghi thì ưu tiên "kháng".
+    # Giữ cả hai quan hệ mâu thuẫn để candidate claims và graph cùng phản ánh
+    # bằng chứng cần được duyệt thay vì tự ý phân xử dựa trên mức độ.
     for key in list(graph.edges):
         source, rel_type, target = key
         if rel_type != "SUSCEPTIBLE_TO":
@@ -1930,18 +1930,9 @@ def build_graph(
         if twin not in graph.edges:
             continue
         susceptible_edge = graph.edges[key]
-        resistant_edge = graph.edges[twin]
-        drop = (
-            key
-            if not susceptible_edge["properties"].get("level")
-            else twin
-            if not resistant_edge["properties"].get("level")
-            else key
-        )
-        graph.edges.pop(drop, None)
         warnings.append(
             f"Mâu thuẫn kháng/nhiễm giữa “{susceptible_edge['source']}” và "
-            f"“{susceptible_edge['target']}”; đã giữ lại một quan hệ."
+            f"“{susceptible_edge['target']}”; cả hai quan hệ được giữ lại để duyệt."
         )
 
     # Giống chưa gắn được vào loài nào thì gắn vào loài mặc định để đồ thị

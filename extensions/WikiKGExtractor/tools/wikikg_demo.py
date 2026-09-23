@@ -8,8 +8,10 @@ Gemini and Neo4j stay disabled.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,7 +31,7 @@ LOCAL_SETTINGS = REPOSITORY_ROOT / "LocalSettings.php"
 VENDOR_AUTOLOAD = REPOSITORY_ROOT / "vendor" / "autoload.php"
 ENV_FILE = REPOSITORY_ROOT / ".env"
 CACHE_DIRECTORY = REPOSITORY_ROOT / "cache" / "sqlite"
-PROJECT_NAME = "wikicrop-kg-demo"
+MINIMUM_COMPOSE_VERSION = (2, 24, 4)
 DEFAULT_PORT = 8088
 DEMO_USER = "Admin"
 DEMO_PASSWORD = "dockerpass"
@@ -47,6 +49,38 @@ $wgWikiKGExtractorPushToNeo4j = false;
 
 class DemoError(RuntimeError):
     """A failure with a concrete recovery step for the demo user."""
+
+
+def project_name_for_checkout(checkout_path: Path) -> str:
+    checkout = checkout_path.resolve()
+    identity = hashlib.sha256(os.fsencode(checkout)).hexdigest()[:16]
+    return f"wikicrop-kg-demo-{identity}"
+
+
+PROJECT_NAME = project_name_for_checkout(REPOSITORY_ROOT)
+
+
+def parse_compose_version(version_text: str) -> tuple[int, int, int]:
+    match = re.fullmatch(
+        r"\s*v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\s*",
+        version_text,
+    )
+    if match is None:
+        raise DemoError(
+            f"Could not parse Docker Compose version: {version_text.strip()!r}."
+        )
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def ensure_supported_compose_version(version_text: str) -> None:
+    version = parse_compose_version(version_text)
+    if version < MINIMUM_COMPOSE_VERSION:
+        found = ".".join(str(part) for part in version)
+        required = ".".join(str(part) for part in MINIMUM_COMPOSE_VERSION)
+        raise DemoError(
+            f"Docker Compose {required} or newer is required; found {found}. "
+            "Upgrade Docker Compose and try again."
+        )
 
 
 def compose_command(*arguments: str) -> list[str]:
@@ -114,6 +148,12 @@ def run_checked(
 def ensure_prerequisites(environment: dict[str, str]) -> None:
     if shutil.which("docker") is None:
         raise DemoError("Docker is not installed. Install Docker Desktop and try again.")
+    version = run_checked(
+        ["docker", "compose", "version", "--short"],
+        environment=environment,
+        capture_output=True,
+    )
+    ensure_supported_compose_version(version.stdout.strip())
     result = subprocess.run(
         ["docker", "info"],
         cwd=REPOSITORY_ROOT,
@@ -238,6 +278,7 @@ def load_demo_pages() -> dict[str, str]:
         if not title or not text:
             raise DemoError("Every accepted synthetic page needs a title and text.")
         if page.get("kind") == "species":
+            text = "{{InfoPlant1}}\n" + text
             links = "\n".join(
                 f"* [[{str(variety['title']).replace('_', ' ')}]]"
                 for variety in varieties

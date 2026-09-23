@@ -7,18 +7,22 @@ use DOMElement;
 use DOMNode;
 use DOMXPath;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Parser\ParserOutputLinkTypes;
 use MediaWiki\Revision\SlotRecord;
 use ParserOptions;
 use Throwable;
 use Title;
 
 /**
- * Reads broad crop pages from the current MediaWiki database, keeps the
- * content of the crop page itself (kind = species), discovers variety links
- * under headings containing "Danh sách" or "Giống", then reads the linked
- * variety pages directly from the same backend (kind = variety).
+ * Reads recognized crop pages from the current MediaWiki database, keeps the
+ * crop page itself (kind = species), discovers variety links under headings
+ * containing "Danh sách" or "Giống", then reads eligible linked pages from the
+ * same backend (kind = variety).
  */
 class LocalWikiExtractor {
+    private const CROP_TEMPLATES = [ 'InfoCropPlant', 'InfoPlant1' ];
+    private const VARIETY_TEMPLATES = [ 'InfoCropPlant', 'InfoPlant1Giong' ];
+
     /** @var MediaWikiServices */
     private $services;
 
@@ -138,9 +142,21 @@ class LocalWikiExtractor {
                 }
 
                 // 1. Nội dung của chính trang loài.
-                $speciesText = $this->htmlToText( $sourcePage['html'] );
                 /** @var Title $resolvedSourceTitle */
                 $resolvedSourceTitle = $sourcePage['title'];
+                if ( !$this->hasActiveTemplate(
+                    $sourcePage['templates'],
+                    self::CROP_TEMPLATES
+                ) ) {
+                    $errors[] = $this->errorPage(
+                        $resolvedSourceTitle->getPrefixedText(),
+                        'Trang gốc không có mẫu cây trồng được nhận diện.',
+                        $resolvedSourceTitle->getFullURL()
+                    );
+                    continue;
+                }
+
+                $speciesText = $this->htmlToText( $sourcePage['html'] );
                 if ( $speciesText !== '' ) {
                     if ( count( $speciesPages ) >= $this->maxCollectedPages ) {
                         $errors[] = $this->errorPage(
@@ -235,6 +251,24 @@ class LocalWikiExtractor {
                     continue;
                 }
 
+                $sourceNames = array_keys( $candidate['sources'] );
+                /** @var Title $resolvedTitle */
+                $resolvedTitle = $page['title'];
+                if ( !$this->hasActiveTemplate(
+                    $page['templates'],
+                    self::VARIETY_TEMPLATES
+                ) && !$this->isCropTiedTitle( $varietyTitle, $sourceNames )
+                    && !$this->isCropTiedTitle( $resolvedTitle, $sourceNames )
+                ) {
+                    $errors[] = $this->errorPage(
+                        $varietyTitle->getPrefixedText(),
+                        'Trang liên kết không có mẫu giống được nhận diện '
+                            . 'và tên không gắn với loài nguồn.',
+                        $varietyTitle->getFullURL()
+                    );
+                    continue;
+                }
+
                 $text = $this->htmlToText( $page['html'] );
                 if ( $text === '' ) {
                     $errors[] = $this->errorPage(
@@ -245,9 +279,6 @@ class LocalWikiExtractor {
                     continue;
                 }
 
-                /** @var Title $resolvedTitle */
-                $resolvedTitle = $page['title'];
-                $sourceNames = array_keys( $candidate['sources'] );
                 $entry = [
                     'title' => $resolvedTitle->getPrefixedText(),
                     'url' => $resolvedTitle->getFullURL(),
@@ -282,7 +313,7 @@ class LocalWikiExtractor {
     }
 
     /**
-     * @return array{title:Title,html:string,wikitext:string,page_id:int,revision_id:int,content_hash:string}|array{error:string}
+     * @return array{title:Title,html:string,wikitext:string,templates:string[],page_id:int,revision_id:int,content_hash:string}|array{error:string}
      */
     private function loadRenderedPage( Title $requestedTitle ) {
         if ( !$this->permissionManager->userCan(
@@ -363,12 +394,21 @@ class LocalWikiExtractor {
             $this->parserOptions
         );
 
+        $templates = [];
+        foreach ( $parserOutput->getLinkList( ParserOutputLinkTypes::TEMPLATE ) as $entry ) {
+            $template = $entry['link'];
+            if ( $template->getNamespace() === NS_TEMPLATE ) {
+                $templates[] = $this->normalizeName( $template->getDBkey() );
+            }
+        }
+
         return [
             'title' => $title,
             'html' => (string)$parserOutput
                 ->runOutputPipeline( $this->parserOptions, [] )
                 ->getContentHolderText(),
             'wikitext' => $sourceText,
+            'templates' => $templates,
             'page_id' => (int)$title->getArticleID(),
             'revision_id' => (int)$revision->getId(),
             'content_hash' => hash( 'sha256', $sourceText )
@@ -707,6 +747,47 @@ class LocalWikiExtractor {
         $name = str_replace( '_', ' ', trim( (string)$name ) );
         $name = preg_replace( '/\s+/u', ' ', $name );
         return $this->lower( (string)$name );
+    }
+
+    /**
+     * @param string[] $usedTemplates Canonical names from the rendered revision
+     * @param string[] $templateNames
+     * @return bool
+     */
+    private function hasActiveTemplate( array $usedTemplates, array $templateNames ) {
+        $recognized = $this->buildNameSet( $templateNames );
+        foreach ( $usedTemplates as $template ) {
+            if ( isset( $recognized[$template] ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param Title $title
+     * @param string[] $cropNames
+     * @return bool
+     */
+    private function isCropTiedTitle( Title $title, array $cropNames ) {
+        $titleName = $this->normalizeName( $title->getPrefixedText() );
+        foreach ( $cropNames as $cropName ) {
+            $cropName = $this->normalizeName( $cropName );
+            if ( $cropName === '' ) {
+                continue;
+            }
+
+            foreach ( [
+                $cropName,
+                'giống ' . $cropName,
+                'cây ' . $cropName
+            ] as $prefix ) {
+                if ( strpos( $titleName, $prefix . ' ' ) === 0 ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private function lower( $text ) {

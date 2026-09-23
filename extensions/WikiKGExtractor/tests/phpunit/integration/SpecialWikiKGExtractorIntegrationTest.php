@@ -80,7 +80,7 @@ class SpecialWikiKGExtractorIntegrationTest extends SpecialPageTestBase {
 		$varietyTitle = 'Lúa kiểm thử special ST25';
 		$this->editPage(
 			$cropTitle,
-			"== Danh sách giống ==\n* [[{$varietyTitle}]]"
+			"{{InfoPlant1}}\n== Danh sách giống ==\n* [[{$varietyTitle}]]"
 		);
 		$this->editPage( $varietyTitle, 'Nội dung giống.' );
 		$this->overrideConfigValues( [
@@ -105,6 +105,38 @@ class SpecialWikiKGExtractorIntegrationTest extends SpecialPageTestBase {
 			$html
 		);
 		$this->assertStringNotContainsString( 'download="raw_data.json"', $html );
+	}
+
+	public function testDoesNotExportWhenNoLinkedPageIsAnAcceptedVariety() {
+		$cropTitle = 'Lúa kiểm thử special không có giống';
+		$unrelatedTitle = 'Trang kiểm thử special không gắn loài';
+		$this->editPage(
+			$cropTitle,
+			"{{InfoPlant1}}\n== Danh sách giống ==\n* [[{$unrelatedTitle}]]"
+		);
+		$this->editPage( $unrelatedTitle, 'Nội dung trang không liên quan.' );
+		$this->overrideConfigValues( [
+			'WikiKGExtractorOutputDirectory' => $this->outputDirectory,
+			'WikiKGExtractorOutputBaseUrl' => ''
+		] );
+		$testUser = $this->getTestSysop();
+		$request = new FauxRequest( [
+			'source_pages' => $cropTitle,
+			'wpEditToken' => $testUser->getUser()->getEditToken()
+		], true );
+
+		[ $html ] = $this->executeSpecialPage(
+			'',
+			$request,
+			'vi',
+			$testUser->getAuthority()
+		);
+
+		$this->assertStringContainsString(
+			'Không tìm thấy trang giống hợp lệ để trích xuất',
+			$html
+		);
+		$this->assertDirectoryDoesNotExist( $this->outputDirectory );
 	}
 
 	private function removeDirectory( $directory ) {

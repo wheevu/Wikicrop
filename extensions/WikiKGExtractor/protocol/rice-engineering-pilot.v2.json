@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "protocol_id": "rice-engineering-pilot-2026-09-v2",
+  "extractor": {
+    "version": "2.3.1",
+    "method": "rules",
+    "worker_sha256": "ba87f32ddd3deb72e78b11551b15dfa07ea0715246cec4522eabaf842dfd31f0",
+    "evaluator_sha256": "d930fa641c34229315006e8b046066dd80131453ed2d341ee00628830b9d78fe"
+  },
+  "artifacts": {
+    "manifest_sha256": "e517e9d51f74439470a800a585b3accb9f15e8d5e2e5584bc03a8f8dbf586975",
+    "development_input_sha256": "bec0088253f933430749dec724898bf6112b3ba4fe66e909a3f398c63c6ba66e",
+    "heldout_input_sha256": "674922f84730de3c9ae29598a36112519687cf5095408264da2e0278522d82bc",
+    "schema_sha256": {
+      "candidate-claims.v1.schema.json": "d8f29a57de1ce960bb588653faa2914165321ae182432bfc2a17b333ba2ff90e",
+      "corpus-manifest.v1.schema.json": "32d0a53b5425846e7b4ce32033bad1dc8de2251319e16e6c5a98345962b0560d",
+      "evaluation-protocol.v1.schema.json": "696afabfbaf85a75503287a311dccfa4035a453dda7cd9f1a6608729ae9d399f",
+      "evaluation-report.v1.schema.json": "b04a9133d810d8184260d70d6102418d8f4c481b2e86488ab320f92ed7b18c20",
+      "graph-document.v1.schema.json": "aa828a70a95b54f35ce24bb489606a9a0e7e5deacd28446f3758d533fcf386be",
+      "raw-data.v1.schema.json": "02e156bfef0cda9f325a4f5ab98fd36df843e680b413fb66dd3a7e7b3d5f1f5a"
+    }
+  },
+  "ontology": {
+    "entity_types": [
+      "Crop",
+      "Variety",
+      "Pest"
+    ],
+    "relationship_predicates": [
+      "AFFECTED_BY",
+      "HAS_VARIETY",
+      "RESISTANT_TO",
+      "SUSCEPTIBLE_TO"
+    ],
+    "scalar_predicates": [
+      "crossbred_from",
+      "family",
+      "genus",
+      "growth_duration",
+      "kingdom",
+      "plant_height",
+      "scientific_name",
+      "taxon_order",
+      "variety_type",
+      "yield_amount"
+    ],
+    "qualifier_keys": [
+      "condition",
+      "level",
+      "season"
+    ]
+  },
+  "evaluation": {
+    "hash_seeds": [
+      0,
+      1
+    ],
+    "deterministic_outputs": [
+      "candidate_claims.json",
+      "graph_data_raw.json",
+      "graph_nodes_edges.json",
+      "kg_summary.json",
+      "mediawiki_bang_thuoc_tinh_cay_trong.txt",
+      "neo4j_import.cypher"
+    ],
+    "reported_metrics": [
+      "candidate_claim_count",
+      "edge_count",
+      "input_error_count",
+      "node_count",
+      "page_count",
+      "runtime_seconds",
+      "skipped_source_page_count",
+      "traceability_complete_count",
+      "traceability_coverage",
+      "warning_count",
+      "worker_failure_count"
+    ],
+    "forbidden_metrics": [
+      "agreement",
+      "f1",
+      "precision",
+      "recall",
+      "scientific_accuracy"
+    ]
+  },
+  "privacy": {
+    "output_outside_repository": true,
+    "aggregate_report_only": true
+  },
+  "rerun_policy": {
+    "identical_retry_only_after_infrastructure_failure": true,
+    "no_tuning_after_results": true
+  }
+}

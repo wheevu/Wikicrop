@@ -85,15 +85,19 @@ class SpecialWikiKGExtractor extends SpecialPage {
             );
             $pages = $extractor->extract( $sourcePages );
 
-            $successfulPages = array_filter(
+            $varietyPages = array_filter(
                 $pages,
                 static function ( $page ) {
-                    return !empty( $page['text'] );
+                    return !empty( $page['text'] )
+                        && ( $page['kind'] ?? '' ) === 'variety';
                 }
             );
-            if ( !$successfulPages ) {
+            if ( !$varietyPages ) {
                 throw new Exception(
-                    'Không tìm thấy trang giống cây để trích xuất. Trang gốc phải có mục “Danh sách” hoặc “Giống” chứa liên kết tới các giống.'
+                    'Không tìm thấy trang giống hợp lệ để trích xuất. '
+                        . 'Trang gốc cần có mẫu cây trồng được nhận diện và '
+                        . 'ít nhất một liên kết tới trang có mẫu giống được '
+                        . 'nhận diện hoặc tên gắn với loài.'
                 );
             }
 

@@ -119,3 +119,15 @@ python3 extensions/WikiKGExtractor/tools/evaluate_pilot.py \
 
 Do not replace `development` with `heldout` until the freeze packet has been reviewed and explicit human approval has been given.
 After approval, the held-out command also requires `--confirm-heldout-approved` to prevent an accidental run.
+
+## Reviewed 2.3.1 successor candidate
+
+`extensions/WikiKGExtractor/protocol/rice-engineering-pilot.v2.json` pins the 2.3.1 worker separately from this historical 2.3.0 freeze.
+It reuses the v1 evaluator, schemas, private corpus manifest, development input, and unopened held-out input by hash.
+The successor preserves both pending resistance and susceptibility graph relationships when source evidence conflicts, matching the claim set instead of discarding one graph edge.
+It also limits live collection to recognized crop roots and eligible linked varieties, and restricts the synthetic browser demo to loopback with a checkout-specific Compose project.
+The development evaluation passed under both hash seeds with 15 nodes, 20 relationships, 55 pending claims, and 55 traceability-complete claims.
+The synthetic MediaWiki browser run rendered 8 nodes and 11 relationships; the extension's SQLite PHPUnit suite passed 50 tests and 98 assertions.
+Independent review found two live page-eligibility defects, which were corrected and approved in a focused second review.
+This candidate is not yet an accepted freeze or integrated into the supervisor-facing branch.
+The held-out split remains unopened and requires separate explicit approval.
