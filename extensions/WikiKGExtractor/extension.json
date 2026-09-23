@@ -1,6 +1,6 @@
 {
   "name": "WikiKGExtractor",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "author": [
     "Mach Gia Han"
   ],
@@ -19,13 +19,20 @@
     "MediaWiki\\Extension\\WikiKGExtractor\\": "src/"
   },
   "SpecialPages": {
-    "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor"
+    "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor",
+    "WikiKGReview": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReview"
   },
   "ExtensionMessagesFiles": {
     "WikiKGExtractorAlias": "WikiKGExtractor.alias.php"
   },
   "Hooks": {
-    "SkinBuildSidebar": "MediaWiki\\Extension\\WikiKGExtractor\\Hooks::onSkinBuildSidebar"
+    "SkinBuildSidebar": "MediaWiki\\Extension\\WikiKGExtractor\\Hooks::onSkinBuildSidebar",
+    "LoadExtensionSchemaUpdates": "schema"
+  },
+  "HookHandlers": {
+    "schema": {
+      "class": "MediaWiki\\Extension\\WikiKGExtractor\\ClaimReviewSchemaHooks"
+    }
   },
   "MessagesDirs": {
     "WikiKGExtractor": [
@@ -68,11 +75,15 @@
     ]
   },
   "AvailableRights": [
-    "wikikgextractor-run"
+    "wikikgextractor-run",
+    "wikikgextractor-review"
   ],
   "GroupPermissions": {
     "user": {
       "wikikgextractor-run": true
+    },
+    "sysop": {
+      "wikikgextractor-review": true
     }
   },
   "config": {

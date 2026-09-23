@@ -5,6 +5,7 @@
     ]
   },
   "wikikgextractor": "Wiki extraction and KG builder",
+  "wikikgreview": "WikiKG claim review",
   "wikikgextractor-desc": "Discovers and extracts crop variety pages from broad pages in the current MediaWiki installation.",
   "wikikgextractor-summary": "",
   "wikikgextractor-permissiondenied": "You do not have permission to run this extractor."

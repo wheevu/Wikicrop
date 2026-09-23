@@ -147,35 +147,7 @@ class SpecialWikiKGExtractor extends SpecialPage {
 
             $kgResult = null;
             if ( $runKg ) {
-                $runner = new KgRunner(
-                    $config->get( 'WikiKGExtractorPythonCommand' ),
-                    dirname( __DIR__ ) . '/bin/kg_worker.py',
-                    $config->get( 'WikiKGExtractorGeminiApiKey' ),
-                    $config->get( 'WikiKGExtractorGeminiModel' ),
-                    $config->get( 'WikiKGExtractorKgTimeout' ),
-                    [
-                        'batch_size' => $config->get(
-                            'WikiKGExtractorKgBatchSize'
-                        ),
-                        'push_neo4j' => (bool)$config->get(
-                            'WikiKGExtractorPushToNeo4j'
-                        ),
-                        'neo4j_uri' => $config->get( 'WikiKGExtractorNeo4jUri' ),
-                        'neo4j_user' => $config->get(
-                            'WikiKGExtractorNeo4jUser'
-                        ),
-                        'neo4j_password' => $config->get(
-                            'WikiKGExtractorNeo4jPassword'
-                        ),
-                        'neo4j_database' => $config->get(
-                            'WikiKGExtractorNeo4jDatabase'
-                        )
-                    ]
-                );
-                $kgResult = $runner->run(
-                    $result['json_path'],
-                    $result['directory']
-                );
+                $kgResult = $this->runKgWorker( $config, $result );
             }
 
             $this->showResult(
@@ -197,6 +169,26 @@ class SpecialWikiKGExtractor extends SpecialPage {
         }
 
         $this->showForm( $sourcePagesText, $runKg );
+    }
+
+    /** @param array<string,mixed> $result */
+    protected function runKgWorker( $config, array $result ) {
+        $runner = new KgRunner(
+            $config->get( 'WikiKGExtractorPythonCommand' ),
+            dirname( __DIR__ ) . '/bin/kg_worker.py',
+            $config->get( 'WikiKGExtractorGeminiApiKey' ),
+            $config->get( 'WikiKGExtractorGeminiModel' ),
+            $config->get( 'WikiKGExtractorKgTimeout' ),
+            [
+                'batch_size' => $config->get( 'WikiKGExtractorKgBatchSize' ),
+                'push_neo4j' => (bool)$config->get( 'WikiKGExtractorPushToNeo4j' ),
+                'neo4j_uri' => $config->get( 'WikiKGExtractorNeo4jUri' ),
+                'neo4j_user' => $config->get( 'WikiKGExtractorNeo4jUser' ),
+                'neo4j_password' => $config->get( 'WikiKGExtractorNeo4jPassword' ),
+                'neo4j_database' => $config->get( 'WikiKGExtractorNeo4jDatabase' )
+            ]
+        );
+        return $runner->run( $result['json_path'], $result['directory'] );
     }
 
     /**
@@ -424,6 +416,54 @@ class SpecialWikiKGExtractor extends SpecialPage {
                 $html .= GraphDocument::render( $graphDocument );
             } else {
                 $html .= GraphDocument::renderFile( $graphPath );
+            }
+
+            try {
+                $claims = ClaimDocument::load(
+                    rtrim( (string)$outputDirectory, DIRECTORY_SEPARATOR )
+                        . DIRECTORY_SEPARATOR . 'candidate_claims.json',
+                    $result['json_path']
+                );
+                $evidenceItems = [];
+                foreach ( $claims['claims'] as $claim ) {
+                    foreach ( $claim['evidence'] as $evidence ) {
+                        $evidenceItems[] = $evidence;
+                    }
+                }
+                if ( $claims['claims'] && !ClaimEvidenceAccess::canRead(
+                    $this->getAuthority(),
+                    $evidenceItems
+                ) ) {
+                    throw new Exception( 'Claim evidence sources are no longer available.' );
+                }
+
+                $latestReviews = [];
+                $canReview = false;
+                try {
+                    $store = new ClaimReviewStore(
+                        MediaWikiServices::getInstance()->getConnectionProvider()
+                    );
+                    $store->importVerified( $claims );
+                    foreach ( $claims['claims'] as $claim ) {
+                        $id = $claim['snapshot_id'];
+                        $latestReviews[$id] = $store->getLatestReview( $id );
+                    }
+                    $canReview = $this->getUser()->isAllowed( 'wikikgextractor-review' );
+                } catch ( Throwable $e ) {
+                    $html .= Html::element(
+                        'p',
+                        [ 'class' => 'wikikg-note wikikgextractor-error' ],
+                        'Có thể đọc claim, nhưng chưa lưu được lịch sử duyệt. Hãy kiểm tra cơ sở dữ liệu.'
+                    );
+                }
+                $html .= ClaimEvidenceView::render( $claims, $latestReviews, $canReview );
+            } catch ( Throwable $e ) {
+                $html .= Html::element(
+                    'p',
+                    [ 'class' => 'wikikg-note wikikgextractor-error' ],
+                    'Không thể hiển thị hoặc lưu claim vì nguồn bằng chứng không còn khả dụng. '
+                        . 'Dữ liệu graph vẫn còn ở trên.'
+                );
             }
         } elseif ( $kgResult !== null ) {
             $html .= Html::element(

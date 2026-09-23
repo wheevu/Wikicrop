@@ -5,6 +5,7 @@
     ]
   },
   "wikikgextractor": "Trích xuất Wiki và tạo KG",
+  "wikikgreview": "Duyệt claim WikiKG",
   "wikikgextractor-desc": "Tìm và trích xuất nội dung các giống cây từ những trang tổng quan trong MediaWiki hiện tại.",
   "wikikgextractor-summary": "",
   "wikikgextractor-permissiondenied": "Bạn không có quyền chạy công cụ trích xuất này."

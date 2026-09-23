@@ -494,3 +494,132 @@
     overflow-x: auto;
   }
 }
+
+/* ---------- Claim evidence and review ---------- */
+
+.wikikg-claim-document {
+  max-width: 760px;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dbe5df;
+}
+
+.wikikg-claim-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.wikikg-claim {
+  min-width: 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid #dbe5df;
+  border-radius: 10px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.wikikg-claim-statement {
+  margin: 0 0 0.4rem;
+  color: #17231d;
+  font-weight: 600;
+}
+
+.wikikg-claim-status {
+  margin: 0.4rem 0;
+  color: #205f3f;
+  font-weight: 600;
+}
+
+.wikikg-claim-conflict,
+.wikikgreview-error {
+  color: #842d26;
+}
+
+.wikikg-claim-qualifiers {
+  margin: 0.4rem 0;
+}
+
+.wikikg-claim-qualifiers > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+}
+
+.wikikg-claim-qualifiers dt {
+  color: #5d7268;
+}
+
+.wikikg-claim-qualifiers dd {
+  margin: 0;
+}
+
+.wikikg-evidence {
+  margin-top: 0.65rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #dbe5df;
+  border-radius: 6px;
+  background: #f9fcfa;
+}
+
+.wikikg-evidence summary {
+  cursor: pointer;
+}
+
+.wikikg-evidence-span {
+  margin: 0.65rem 0;
+  padding: 0.2rem 0.8rem;
+  border-left: 3px solid #829e8c;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wikikg-evidence-source {
+  margin: 0.4rem 0 0;
+}
+
+.wikikgreview-list {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.wikikgreview-list th,
+.wikikgreview-list td {
+  padding: 0.5rem;
+  border: 1px solid #dbe5df;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.wikikgreview-form {
+  max-width: 760px;
+  margin-top: 1.25rem;
+}
+
+.wikikgreview-form label {
+  display: inline-block;
+  margin: 0.4rem 0.8rem 0.4rem 0;
+}
+
+.wikikgreview-form textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 6rem;
+}
+
+.wikikgreview-form button {
+  margin-top: 0.8rem;
+}
+
+.wikikg-evidence summary:focus-visible,
+.wikikg-claim a:focus-visible,
+.wikikgreview-list a:focus-visible,
+.wikikgreview-form :focus-visible {
+  outline: 2px solid #205f3f;
+  outline-offset: 2px;
+}

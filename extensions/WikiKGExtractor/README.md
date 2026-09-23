@@ -1,4 +1,4 @@
-# WikiKGExtractor 2.3.1 review candidate
+# WikiKGExtractor 2.4.0 review candidate
 
 **WikiKGExtractor** là tiện ích mở rộng (extension) cho MediaWiki, được xây dựng cho hệ thống **Wikicrop**. Extension cho phép nhập tên một loài cây, thu thập nội dung trang loài và các trang giống thuộc mục **Danh sách/Giống**, sau đó xuất dữ liệu và tùy chọn xây dựng **Knowledge Graph** để lưu trữ trên **Neo4j**.
 
@@ -397,3 +397,39 @@ python3 extensions/WikiKGExtractor/tools/wikikg_demo.py stop
 
 The demo refuses to alter an existing non-demo `LocalSettings.php`.
 Use a clean clone when another WikiCrop installation already occupies the repository directory.
+
+## 13. Inspecting and reviewing claims locally
+
+Version 2.4.0 adds a read-only evidence list to the `Special:WikiKGExtractor` result page and a separate `Special:WikiKGReview` page for claim-level decisions.
+It does not change the frozen 2.3.1 worker or the v2 engineering-pilot protocol.
+
+Before using the review page, run `php maintenance/run.php update --quick` on a disposable local wiki to create the extension's five review tables.
+Each table has an independent updater patch, so rerunning the updater after an interrupted install creates any tables that are still missing.
+Never run tests or schema updates against the production WikiCrop database without a separate migration review and approval.
+The table definitions live in `sql/tables.json`; do not edit the generated SQL files directly.
+From the MediaWiki root, regenerate the MySQL and SQLite aggregates, then split them into updater patches:
+
+```bash
+php maintenance/run.php generateSchemaSql \
+  --json extensions/WikiKGExtractor/sql/tables.json \
+  --sql extensions/WikiKGExtractor/sql/mysql/tables-generated.sql \
+  --type mysql
+php maintenance/run.php generateSchemaSql \
+  --json extensions/WikiKGExtractor/sql/tables.json \
+  --sql extensions/WikiKGExtractor/sql/sqlite/tables-generated.sql \
+  --type sqlite
+python3 extensions/WikiKGExtractor/tools/split_schema_sql.py
+```
+
+The splitter checks the expected five table names and order, and rejects unexpected SQL statements rather than silently omitting them.
+
+Users allowed to run extraction can inspect only claims from the pages they were permitted to read during that run.
+The viewer checks each source span against the exact raw wikitext, its revision metadata, and its SHA-256 hashes before displaying it.
+Keep `WikiKGExtractorOutputBaseUrl` empty and place `WikiKGExtractorOutputDirectory` outside the web root; earlier export links can expose raw page text if an administrator configures a public base URL.
+
+Only sysops can open `Special:WikiKGReview` by default.
+The review page checks current read permission and revision visibility again before showing stored evidence or accepting a decision.
+Each claim's stored snapshot includes the evidence revision and content hash, so a changed source yields a new pending snapshot instead of inheriting an old approval.
+Approve and reject actions require a reason and leave an append-only audit history.
+They do not change graph output, publish facts, write to Neo4j, or establish scientific correctness.
+The held-out split remains closed until a separate approval.

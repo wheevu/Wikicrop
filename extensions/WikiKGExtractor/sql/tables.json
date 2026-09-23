@@ -1,0 +1,253 @@
+[
+	{
+		"name": "wikikg_snapshot",
+		"comment": "Immutable, revision-pinned candidate claim snapshots.",
+		"columns": [
+			{
+				"name": "wikikg_snapshot_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_snapshot_hash",
+				"comment": "Fingerprint used to reject reuse of a snapshot ID for different data.",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_schema_version",
+				"type": "binary",
+				"options": { "notnull": true, "length": 8 }
+			},
+			{
+				"name": "wikikg_metadata",
+				"comment": "Bounded JSON metadata, excluding normalized source-page rows.",
+				"type": "blob",
+				"options": { "notnull": true, "length": 65530 }
+			},
+			{
+				"name": "wikikg_created",
+				"type": "mwtimestamp",
+				"options": { "notnull": true }
+			},
+			{
+				"name": "wikikg_claim_count",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_source_count",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			}
+		],
+		"indexes": [
+			{
+				"name": "wikikg_snapshot_created",
+				"columns": [ "wikikg_created" ],
+				"unique": false
+			}
+		],
+		"pk": [ "wikikg_snapshot_id" ]
+	},
+	{
+		"name": "wikikg_source_page",
+		"comment": "Source page revision identifiers for a candidate snapshot; never stores page bodies.",
+		"columns": [
+			{
+				"name": "wikikg_snapshot_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_page_id",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_revision_id",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_content_hash",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_page_title",
+				"type": "blob",
+				"options": { "notnull": true, "length": 512 }
+			},
+			{
+				"name": "wikikg_kind",
+				"type": "binary",
+				"options": { "notnull": true, "length": 16, "default": "" }
+			}
+		],
+		"indexes": [],
+		"pk": [ "wikikg_snapshot_id", "wikikg_page_id", "wikikg_revision_id" ]
+	},
+	{
+		"name": "wikikg_claim",
+		"comment": "Semantic-only claims, scoped to one immutable snapshot.",
+		"columns": [
+			{
+				"name": "wikikg_snapshot_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_claim_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_semantic_data",
+				"comment": "JSON claim semantics only; evidence and review events are separate.",
+				"type": "blob",
+				"options": { "notnull": true, "length": 65530 }
+			},
+			{
+				"name": "wikikg_traceability_complete",
+				"type": "mwtinyint",
+				"options": { "notnull": true, "unsigned": true }
+			}
+		],
+		"indexes": [],
+		"pk": [ "wikikg_snapshot_id", "wikikg_claim_id" ]
+	},
+	{
+		"name": "wikikg_evidence",
+		"comment": "Distinct, revision-pinned claim evidence, including source spans but no page bodies.",
+		"columns": [
+			{
+				"name": "wikikg_snapshot_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_claim_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_evidence_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_page_id",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_revision_id",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_content_hash",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_page_title",
+				"type": "blob",
+				"options": { "notnull": true, "length": 512 }
+			},
+			{
+				"name": "wikikg_extraction_method",
+				"type": "binary",
+				"options": { "notnull": true, "length": 8 }
+			},
+			{
+				"name": "wikikg_extractor_version",
+				"type": "binary",
+				"options": { "notnull": true, "length": 64 }
+			},
+			{
+				"name": "wikikg_location_type",
+				"type": "binary",
+				"options": { "notnull": true, "length": 16 }
+			},
+			{
+				"name": "wikikg_location",
+				"type": "blob",
+				"options": { "notnull": false, "length": 512 }
+			},
+			{
+				"name": "wikikg_offset_start",
+				"type": "integer",
+				"options": { "notnull": false, "unsigned": true }
+			},
+			{
+				"name": "wikikg_offset_end",
+				"type": "integer",
+				"options": { "notnull": false, "unsigned": true }
+			},
+			{
+				"name": "wikikg_supporting_span",
+				"type": "blob",
+				"options": { "notnull": false, "length": 65530 }
+			},
+			{
+				"name": "wikikg_span_hash",
+				"type": "string",
+				"options": { "notnull": false, "length": 64, "fixed": true }
+			}
+		],
+		"indexes": [
+			{
+				"name": "wikikg_evidence_revision",
+				"columns": [ "wikikg_snapshot_id", "wikikg_page_id", "wikikg_revision_id" ],
+				"unique": false
+			}
+		],
+		"pk": [ "wikikg_snapshot_id", "wikikg_claim_id", "wikikg_evidence_id" ]
+	},
+	{
+		"name": "wikikg_review_event",
+		"comment": "Append-only versioned decisions, scoped to one snapshot.",
+		"columns": [
+			{
+				"name": "wikikg_snapshot_id",
+				"type": "string",
+				"options": { "notnull": true, "length": 64, "fixed": true }
+			},
+			{
+				"name": "wikikg_version",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_reviewer_id",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "wikikg_status",
+				"type": "binary",
+				"options": { "notnull": true, "length": 8 }
+			},
+			{
+				"name": "wikikg_reason",
+				"type": "blob",
+				"options": { "notnull": true, "length": 4096 }
+			},
+			{
+				"name": "wikikg_timestamp",
+				"type": "mwtimestamp",
+				"options": { "notnull": true }
+			}
+		],
+		"indexes": [
+			{
+				"name": "wikikg_review_reviewer_timestamp",
+				"columns": [ "wikikg_reviewer_id", "wikikg_timestamp" ],
+				"unique": false
+			}
+		],
+		"pk": [ "wikikg_snapshot_id", "wikikg_version" ]
+	}
+]

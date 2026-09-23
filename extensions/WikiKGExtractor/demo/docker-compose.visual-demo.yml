@@ -1,7 +1,7 @@
 services:
   mediawiki:
     platform: linux/amd64
-    image: wikicrop-kg-demo-mediawiki:2.3.0
+    image: wikicrop-kg-demo-mediawiki:2.4.0
     build:
       context: .
       dockerfile: extensions/WikiKGExtractor/demo/python3.dockerfile
