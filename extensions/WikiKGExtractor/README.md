@@ -431,5 +431,13 @@ Only sysops can open `Special:WikiKGReview` by default.
 The review page checks current read permission and revision visibility again before showing stored evidence or accepting a decision.
 Each claim's stored snapshot includes the evidence revision and content hash, so a changed source yields a new pending snapshot instead of inheriting an old approval.
 Approve and reject actions require a reason and leave an append-only audit history.
-They do not change graph output, publish facts, write to Neo4j, or establish scientific correctness.
+They do not change generated extraction files or write to Neo4j, and approval does not establish scientific correctness.
+Decisions affect only the separate reviewed view described below.
 The held-out split remains closed until a separate approval.
+
+Sysops can open `Special:WikiKGReviewedGraph` from the review list or the extraction result after claims are saved.
+It displays only approved claims whose cited pages remain readable at their cited revisions; older approvals remain in the audit history but leave this view when their source revisions change.
+Each page checks at most 50 stored snapshots and links every displayed claim to its review record.
+Property alternatives and relation qualifiers remain separate, and the existing extraction graph is still provisional.
+This reviewed view is not yet a graph-database projection or GraphRAG integration.
+For SQLite, rerun the MediaWiki updater after an interrupted installation to repair any missing review-table indexes without rewriting stored claims.

@@ -22,6 +22,9 @@ class SpecialWikiKGReview extends SpecialPage {
 		parent::__construct( 'WikiKGReview', 'wikikgextractor-review' );
 	}
 
+	/**
+	 * @param string|null $subPage
+	 */
 	public function execute( $subPage ) {
 		$this->setHeaders();
 		if ( !$this->getUser()->isRegistered() ) {
@@ -155,6 +158,15 @@ class SpecialWikiKGReview extends SpecialPage {
 		$this->getOutput()->addHTML(
 			Html::element( 'p', [], 'Danh sách snapshot claim mới nhất. Bằng chứng chỉ hiển thị khi mở từng claim.' )
 		);
+		$this->getOutput()->addHTML( Html::rawElement(
+			'p',
+			[ 'class' => 'wikikg-note' ],
+			Html::element(
+				'a',
+				[ 'href' => SpecialPage::getTitleFor( 'WikiKGReviewedGraph' )->getLocalURL() ],
+				$this->msg( 'wikikgreviewedgraph-link' )->text()
+			)
+		) );
 		if ( !$snapshots ) {
 			$this->getOutput()->addHTML(
 				Html::element( 'p', [], 'Chưa có claim nào cần xem.' )
@@ -314,7 +326,7 @@ class SpecialWikiKGReview extends SpecialPage {
 		] );
 		$form .= Html::openElement( 'fieldset' );
 		$form .= Html::element( 'legend', [], 'Ghi nhận quyết định' );
-		$form .= Html::element( 'p', [], 'Đây là ghi nhận kiểm duyệt, không thay đổi Knowledge Graph.' );
+		$form .= Html::element( 'p', [], 'Quyết định này cập nhật đồ thị đã duyệt, không sửa dữ liệu trích xuất hay Neo4j.' );
 		$form .= Html::openElement( 'label', [ 'for' => 'wikikgreview-approved' ] );
 		$form .= Html::element( 'input', [
 			'id' => 'wikikgreview-approved',
@@ -415,6 +427,7 @@ class SpecialWikiKGReview extends SpecialPage {
 		}
 	}
 
+	/** @inheritDoc */
 	protected function getGroupName() {
 		return 'other';
 	}

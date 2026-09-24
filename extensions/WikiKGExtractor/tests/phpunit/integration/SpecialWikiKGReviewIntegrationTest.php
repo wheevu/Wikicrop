@@ -59,6 +59,7 @@ class SpecialWikiKGReviewIntegrationTest extends SpecialPageTestBase {
 			$sysop->getAuthority()
 		);
 		$this->assertStringContainsString( 'Trạng thái đánh giá hiện tại', $detailHtml );
+		$this->assertStringContainsString( 'Quyết định này cập nhật đồ thị đã duyệt', $detailHtml );
 		$this->assertStringContainsString( 'Chờ duyệt - phiên bản 0', $detailHtml );
 		$this->assertStringContainsString( $fixture['span'], $detailHtml );
 		$this->assertStringContainsString( 'oldid=' . $fixture['revision_id'], $detailHtml );

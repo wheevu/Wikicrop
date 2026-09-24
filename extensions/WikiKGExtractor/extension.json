@@ -20,7 +20,8 @@
   },
   "SpecialPages": {
     "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor",
-    "WikiKGReview": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReview"
+    "WikiKGReview": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReview",
+    "WikiKGReviewedGraph": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReviewedGraph"
   },
   "ExtensionMessagesFiles": {
     "WikiKGExtractorAlias": "WikiKGExtractor.alias.php"

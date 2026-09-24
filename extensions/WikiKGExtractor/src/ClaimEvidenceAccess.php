@@ -77,4 +77,36 @@ final class ClaimEvidenceAccess {
 
 		return true;
 	}
+
+	/**
+	 * Check whether every cited source is readable and still at its cited revision.
+	 *
+	 * @param Authority $authority
+	 * @param mixed $evidenceItems Evidence list from verified or persisted claims
+	 * @return bool
+	 */
+	public static function canReadCurrent( Authority $authority, $evidenceItems ): bool {
+		if ( !self::canRead( $authority, $evidenceItems ) ) {
+			return false;
+		}
+
+		try {
+			$pageStore = MediaWikiServices::getInstance()->getPageStore();
+			foreach ( $evidenceItems as $evidence ) {
+				$page = $pageStore->getPageById(
+					$evidence['page_id'],
+					RdbmsIDBAccessObject::READ_LATEST
+				);
+				if ( !$page || $page->getId() !== $evidence['page_id']
+					|| $page->getLatest() !== $evidence['revision_id']
+				) {
+					return false;
+				}
+			}
+		} catch ( Throwable $exception ) {
+			return false;
+		}
+
+		return true;
+	}
 }

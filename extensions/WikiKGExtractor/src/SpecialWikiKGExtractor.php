@@ -457,6 +457,19 @@ class SpecialWikiKGExtractor extends SpecialPage {
                     );
                 }
                 $html .= ClaimEvidenceView::render( $claims, $latestReviews, $canReview );
+				if ( $canReview ) {
+					$html .= Html::rawElement(
+						'p',
+						[ 'class' => 'wikikg-note' ],
+						Html::element(
+							'a',
+							[ 'href' => SpecialPage::getTitleFor(
+								'WikiKGReviewedGraph'
+							)->getLocalURL() ],
+							$this->msg( 'wikikgreviewedgraph-link' )->text()
+						)
+					);
+				}
             } catch ( Throwable $e ) {
                 $html .= Html::element(
                     'p',
