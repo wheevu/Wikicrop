@@ -25,30 +25,52 @@ class ClaimReviewSchemaHooksTest extends MediaWikiUnitTestCase {
 
 		$updater = $this->createMock( DatabaseUpdater::class );
 		$updater->method( 'getDB' )->willReturn( $database );
-		$registered = [];
+		$registeredTables = [];
 		$updater->expects( $this->exactly( 5 ) )
 			->method( 'addExtensionTable' )
-			->willReturnCallback( static function ( string $table, string $path ) use ( &$registered ): void {
-				$registered[] = [ $table, $path ];
+			->willReturnCallback( static function ( string $table, string $path ) use ( &$registeredTables ): void {
+				$registeredTables[] = [ $table, $path ];
 			} );
+		$registeredIndexes = [];
+		$expectedIndexes = $dbType === 'sqlite' ? [
+			[ 'wikikg_snapshot', 'wikikg_snapshot_created' ],
+			[ 'wikikg_evidence', 'wikikg_evidence_revision' ],
+			[ 'wikikg_review_event', 'wikikg_review_reviewer_timestamp' ],
+		] : [];
+		$updater->expects( $this->exactly( count( $expectedIndexes ) ) )
+			->method( 'addExtensionIndex' )
+			->willReturnCallback(
+				static function ( string $table, string $index, string $path ) use ( &$registeredIndexes ): void {
+					$registeredIndexes[] = [ $table, $index, $path ];
+				}
+			);
 
 		( new ClaimReviewSchemaHooks() )->onLoadExtensionSchemaUpdates( $updater );
 
 		$schemaDir = dirname( __DIR__, 3 ) . "/sql/$dbType";
-		$expectedTables = [
+		$tableNames = [
 			'wikikg_snapshot',
 			'wikikg_source_page',
 			'wikikg_claim',
 			'wikikg_evidence',
 			'wikikg_review_event',
 		];
-		$expected = array_map(
+		$expectedTables = array_map(
 			static fn ( string $table ): array => [ $table, "$schemaDir/$table-generated.sql" ],
-			$expectedTables
+			$tableNames
 		);
 
-		$this->assertSame( $expected, $registered );
-		foreach ( $expected as [ , $path ] ) {
+		$this->assertSame( $expectedTables, $registeredTables );
+		foreach ( $expectedTables as [ , $path ] ) {
+			$this->assertFileExists( $path );
+		}
+
+		$expectedIndexesWithPaths = array_map(
+			static fn ( array $index ): array => [ ...$index, "$schemaDir/patch-{$index[1]}.sql" ],
+			$expectedIndexes
+		);
+		$this->assertSame( $expectedIndexesWithPaths, $registeredIndexes );
+		foreach ( $registeredIndexes as [ , , $path ] ) {
 			$this->assertFileExists( $path );
 		}
 	}

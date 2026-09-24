@@ -27,5 +27,17 @@ final class ClaimReviewSchemaHooks implements LoadExtensionSchemaUpdatesHook {
 		] as $table ) {
 			$updater->addExtensionTable( $table, "$schemaDir/$table-generated.sql" );
 		}
+
+		if ( $dbType === 'sqlite' ) {
+			// addExtensionTable skips a complete patch when the table already exists.
+			// Register SQLite indexes separately so reruns repair interrupted table patches.
+			foreach ( [
+				[ 'wikikg_snapshot', 'wikikg_snapshot_created' ],
+				[ 'wikikg_evidence', 'wikikg_evidence_revision' ],
+				[ 'wikikg_review_event', 'wikikg_review_reviewer_timestamp' ],
+			] as [ $table, $index ] ) {
+				$updater->addExtensionIndex( $table, $index, "$schemaDir/patch-$index.sql" );
+			}
+		}
 	}
 }
