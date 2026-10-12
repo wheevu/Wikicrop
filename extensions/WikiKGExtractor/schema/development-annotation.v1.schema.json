@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/development-annotation.v1.schema.json",
+  "title": "WikiCrop development source annotations, not an approved reference",
+  "$ref": "#/$defs/submission",
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "literal": { "type": "string", "minLength": 1, "maxLength": 65536, "pattern": "\\S" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$" },
+    "entity": {
+      "type": "object",
+      "required": ["literal", "type", "identity_status"],
+      "properties": {
+        "literal": { "$ref": "#/$defs/literal" },
+        "type": { "enum": ["Crop", "Variety", "Pest", "unknown"] },
+        "identity_status": { "enum": ["resolved", "unresolved"] }
+      },
+      "additionalProperties": false
+    },
+    "qualifier": {
+      "type": "object",
+      "required": ["state", "literal"],
+      "properties": {
+        "state": { "enum": ["stated", "not_stated", "uncertain"] },
+        "literal": { "type": ["string", "null"], "maxLength": 65536 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "stated" } } },
+          "then": { "properties": { "literal": { "$ref": "#/$defs/literal" } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "not_stated" } } },
+          "then": { "properties": { "literal": { "type": "null" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "page_id", "revision_id", "content_hash", "source_offset_start",
+        "source_offset_end", "supporting_span", "span_hash"
+      ],
+      "properties": {
+        "page_id": { "type": "integer", "minimum": 1 },
+        "revision_id": { "type": "integer", "minimum": 1 },
+        "content_hash": { "$ref": "#/$defs/sha256" },
+        "source_offset_start": { "type": "integer", "minimum": 0 },
+        "source_offset_end": { "type": "integer", "minimum": 1 },
+        "supporting_span": { "$ref": "#/$defs/literal" },
+        "span_hash": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "annotation": {
+      "type": "object",
+      "required": [
+        "annotation_id", "subject", "predicate", "unit", "qualifiers", "evidence",
+        "judgment", "outside_scope", "reason"
+      ],
+      "properties": {
+        "annotation_id": { "$ref": "#/$defs/id" },
+        "subject": { "$ref": "#/$defs/entity" },
+        "predicate": { "$ref": "#/$defs/literal" },
+        "object": { "$ref": "#/$defs/entity" },
+        "value_literal": { "$ref": "#/$defs/literal" },
+        "unit": { "$ref": "#/$defs/qualifier" },
+        "qualifiers": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+          "additionalProperties": { "$ref": "#/$defs/qualifier" }
+        },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "judgment": { "enum": ["supported", "uncertain", "abstain"] },
+        "outside_scope": { "type": "boolean" },
+        "reason": { "type": "string", "maxLength": 65536 }
+      },
+      "oneOf": [
+        { "required": ["object"], "not": { "required": ["value_literal"] } },
+        { "required": ["value_literal"], "not": { "required": ["object"] } }
+      ],
+      "additionalProperties": false
+    },
+    "pageReview": {
+      "type": "object",
+      "required": ["page_id", "status", "notes"],
+      "properties": {
+        "page_id": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["not_started", "partial", "complete"] },
+        "notes": { "type": "string", "maxLength": 65536 }
+      },
+      "additionalProperties": false
+    },
+    "submission": {
+      "type": "object",
+      "required": [
+        "schema_version", "split", "pack_id", "submission_id", "version",
+        "previous_submission_sha256", "provenance", "page_reviews", "annotations"
+      ],
+      "properties": {
+        "schema_version": { "const": "wikikg.development-annotation.v1" },
+        "split": { "const": "development" },
+        "pack_id": { "$ref": "#/$defs/sha256" },
+        "submission_id": { "$ref": "#/$defs/id" },
+        "version": { "type": "integer", "minimum": 1 },
+        "previous_submission_sha256": {
+          "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["annotator_id", "submitted_at", "exposure", "notes"],
+          "properties": {
+            "annotator_id": { "$ref": "#/$defs/id" },
+            "submitted_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "exposure": { "enum": ["unknown", "source_only_reported", "machine_seen", "synthetic"] },
+            "notes": { "type": "string", "maxLength": 65536 }
+          },
+          "additionalProperties": false
+        },
+        "page_reviews": {
+          "type": "array", "minItems": 1, "maxItems": 1000,
+          "items": { "$ref": "#/$defs/pageReview" }
+        },
+        "annotations": {
+          "type": "array", "maxItems": 10000,
+          "items": { "$ref": "#/$defs/annotation" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

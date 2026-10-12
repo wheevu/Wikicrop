@@ -1,0 +1,29 @@
+{
+  "synthetic": true,
+  "notice": "Fictional software fixtures. No human annotation, real source or agricultural approval.",
+  "pages": [
+    {"page_id": 1, "revision_id": 10, "title": "SYNTHETIC crop", "kind": "species", "wikitext": "SYNTHETIC ONLY. Fictional crop root.\n"},
+    {"page_id": 10, "revision_id": 100, "title": "SYNTHETIC variety X", "kind": "variety", "wikitext": "SYNTHETIC ONLY 🌾: yield 6-8 tấn/ha. Height 100-110 cm in fixture season A.\r\nFixture value é. Duration 90-100 ngày.\n"}
+  ],
+  "ontology": {
+    "entity_types": ["Crop", "Variety", "Pest"],
+    "relationship_predicates": ["RESISTANT_TO"],
+    "scalar_predicates": ["family", "growth_duration", "plant_height", "variety_type", "yield_amount"],
+    "qualifier_keys": ["condition", "level", "season"]
+  },
+  "annotations": [
+    {"id": "A1", "predicate": "yield_amount", "quote": "6-8 tấn/ha", "unit": "tấn/ha"},
+    {"id": "A2", "predicate": "plant_height", "quote": "100-110 cm", "unit": "cm", "season": "fixture season A"},
+    {"id": "A3", "predicate": "growth_duration", "quote": "90-100 ngày", "unit": "ngày"},
+    {"id": "A4", "predicate": "variety_type", "quote": "Fixture value é."},
+    {"id": "A5", "predicate": "variety_type", "quote": "Fixture value é."},
+    {"id": "A6", "predicate": "growth_duration", "quote": "90-100 ngày", "unit": "ngày", "unresolved": true, "reason": "Synthetic unresolved identity."},
+    {"id": "A7", "predicate": "unmodelled_stage", "quote": "Fixture value é.", "outside_scope": true, "reason": "Synthetic outside-vocabulary fixture."}
+  ],
+  "candidates": [
+    {"id": "C1", "predicate": "yield_amount", "quote": "6-8 tấn/ha"},
+    {"id": "C2", "predicate": "plant_height", "quote": "100-110 cm", "season": "fixture season B"},
+    {"id": "C4", "predicate": "variety_type", "quote": "Fixture value é."},
+    {"id": "C5", "predicate": "family", "quote": "Fixture value é.", "subject": {"type": "Crop", "id": "SYNTHETIC crop"}}
+  ]
+}
