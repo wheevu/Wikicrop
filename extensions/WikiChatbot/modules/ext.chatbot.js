@@ -32,8 +32,8 @@
             closeBtn.addEventListener("click", toggleChat);
         }
 
-        // --- Phần logic gửi tin nhắn giữ nguyên ---
         function sendMessage() {
+            if (!input || !messages) return;
             var text = input.value.trim();
             if (!text) return;
 
@@ -50,45 +50,59 @@
             loadingDiv.className = "bot-msg";
             loadingDiv.style.fontStyle = "italic";
             loadingDiv.textContent = "Đang suy nghĩ...";
-            loadingDiv.id = "loading-msg";
             messages.appendChild(loadingDiv);
             messages.scrollTop = messages.scrollHeight;
 
             // 3. Gọi API
             var apiUrl = mw.config.get("WikiChatbotApiUrl") || "http://localhost:8000/ask";
+            var controller = new AbortController();
+            var settled = false;
+            var timer = setTimeout(function () {
+                controller.abort();
+                finish("Yêu cầu đã hết thời gian. Vui lòng thử lại.");
+            }, 30000);
+
+            function finish(answer) {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                if (!loadingDiv.parentNode) return;
+                var botDiv = document.createElement("div");
+                botDiv.className = "bot-msg";
+                botDiv.textContent = answer;
+                loadingDiv.replaceWith(botDiv);
+                messages.scrollTop = messages.scrollHeight;
+            }
+
             fetch(apiUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: text })
+                body: JSON.stringify({ query: text }),
+                signal: controller.signal
             })
-            .then(response => response.json())
+            .then(function (response) {
+                if (!response.ok) throw new Error("request");
+                return response.json();
+            })
             .then(data => {
-                var loadMsg = document.getElementById("loading-msg");
-                if(loadMsg) loadMsg.remove();
-
-                var botDiv = document.createElement("div");
-                botDiv.className = "bot-msg";
-                // Xử lý xuống dòng nếu có
-                botDiv.innerHTML = data.answer ? data.answer.replace(/\n/g, "<br>") : "Không có phản hồi.";
-                messages.appendChild(botDiv);
-                messages.scrollTop = messages.scrollHeight;
+                if (data && !Array.isArray(data) && typeof data.answer === "string" && data.answer.trim()) {
+                    finish(data.answer);
+                } else {
+                    finish("Không nhận được phản hồi hợp lệ.");
+                }
             })
-            .catch(error => {
-                var loadMsg = document.getElementById("loading-msg");
-                if(loadMsg) loadMsg.remove();
-                
-                var errDiv = document.createElement("div");
-                errDiv.className = "bot-msg";
-                errDiv.style.background = "#ffcccc";
-                errDiv.textContent = "Chưa bật Server Python hoặc lỗi kết nối!";
-                messages.appendChild(errDiv);
+            .catch(function () {
+                finish("Không nhận được phản hồi. Vui lòng thử lại.");
             });
         }
 
         if (sendBtn) sendBtn.addEventListener("click", sendMessage);
         if (input) {
-            input.addEventListener("keypress", function(e) {
-                if (e.key === "Enter") sendMessage();
+            input.addEventListener("keydown", function(e) {
+                if (e.key === "Enter" && !e.isComposing) {
+                    e.preventDefault();
+                    sendMessage();
+                }
             });
         }
     });

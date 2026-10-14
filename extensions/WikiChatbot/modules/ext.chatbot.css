@@ -75,20 +75,24 @@
 
 }
 
-.bot-msg {
+#chat-messages .bot-msg {
     background: #e0e0e0;
     padding: 8px 12px;
     border-radius: 15px;
     align-self: flex-start;
     max-width: 80%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
-.user-msg {
+#chat-messages .user-msg {
     background: #dcf8c6;
     padding: 8px 12px;
     border-radius: 15px;
     align-self: flex-end;
     max-width: 80%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .chat-input-area {
