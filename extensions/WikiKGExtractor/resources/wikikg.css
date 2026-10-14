@@ -459,6 +459,31 @@
   color: #2e4a3c;
 }
 
+.wikikg-edge-evidence {
+  margin: 0.8rem 0;
+  padding: 0.75rem;
+  border: 1px solid #dcebe2;
+  background: #f9fcfa;
+}
+
+.wikikg-edge-evidence h6,
+.wikikg-edge-evidence p {
+  margin: 0 0 0.45rem;
+}
+
+.wikikg-edge-evidence li + li {
+  margin-top: 0.6rem;
+}
+
+.wikikg-edge-evidence li p {
+  overflow-wrap: anywhere;
+}
+
+.wikikg-graph-edges a:focus-visible {
+  outline: 2px solid #205f3f;
+  outline-offset: 2px;
+}
+
 .wikikg-graph-error {
   border-left: 3px solid #c53030;
   color: #7a2020;

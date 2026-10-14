@@ -131,6 +131,34 @@ class SpecialWikiKGExtractorIntegrationTest extends SpecialPageTestBase {
 		$this->assertStringNotContainsString( 'download="raw_data.json"', $html );
 	}
 
+	public function testPrivateConfiguredWebRootIsRejectedAfterRealCollection() {
+		$cropTitle = 'Lúa kiểm thử special private path';
+		$varietyTitle = $cropTitle . ' ST25';
+		$this->editPage(
+			$cropTitle,
+			"{{InfoPlant1}}\n== Danh sách giống ==\n* [[{$varietyTitle}]]"
+		);
+		$this->editPage( $varietyTitle, 'Nội dung giống.' );
+		$webRoot = realpath( $GLOBALS['IP'] );
+		$this->assertNotFalse( $webRoot );
+		$this->overrideConfigValues( [
+			'WikiKGExtractorOutputDirectory' => $webRoot . '/private-export-test',
+			'WikiKGExtractorOutputBaseUrl' => ''
+		] );
+		$testUser = $this->getTestSysop();
+		$request = new FauxRequest( [
+			'source_pages' => $cropTitle,
+			'wpEditToken' => $testUser->getUser()->getEditToken()
+		], true );
+
+		[ $html ] = $this->executeSpecialPage(
+			'', $request, 'vi', $testUser->getAuthority()
+		);
+
+		$this->assertStringContainsString( 'Thư mục xuất riêng tư phải nằm ngoài document root', $html );
+		$this->assertDirectoryDoesNotExist( $webRoot . '/private-export-test' );
+	}
+
 	public function testDoesNotExportWhenNoLinkedPageIsAnAcceptedVariety() {
 		$cropTitle = 'Lúa kiểm thử special không có giống';
 		$unrelatedTitle = 'Trang kiểm thử special không gắn loài';

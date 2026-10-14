@@ -1,0 +1,9 @@
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.log
+**/.env
+**/.env.*
+**/rice-corpus-manifest.v1.json
+**/raw-data.dev.v1.json
+**/raw-data.test.v1.json

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/reviewed-projection.v1.schema.json",
+  "title": "Offline WikiKG reviewed projection export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "snapshot_count", "source_watermark", "claims"],
+  "properties": {
+    "schema_version": {"const": "wikikg.reviewed-projection.v1"},
+    "snapshot_count": {"type": "integer", "minimum": 0},
+    "source_watermark": {"$ref": "#/$defs/hash"},
+    "claims": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim"}
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$"},
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"enum": ["Crop", "Variety", "Pest"]},
+        "id": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "page_id", "revision_id", "content_hash", "page_title", "extraction_method", "extractor_version", "location_type"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/hash"},
+        "page_id": {"type": "integer", "minimum": 1},
+        "revision_id": {"type": "integer", "minimum": 1},
+        "content_hash": {"$ref": "#/$defs/hash"},
+        "page_title": {"type": "string", "minLength": 1},
+        "extraction_method": {"enum": ["rules", "ai"]},
+        "extractor_version": {"type": "string", "minLength": 1},
+        "location_type": {"enum": ["source_span", "page_title", "page"]},
+        "location": {"type": "string"},
+        "source_offset_start": {"type": "integer", "minimum": 0},
+        "source_offset_end": {"type": "integer", "minimum": 1},
+        "supporting_span": {"type": "string", "minLength": 1},
+        "span_hash": {"$ref": "#/$defs/hash"}
+      },
+      "allOf": [
+        {"if": {"properties": {"location_type": {"const": "source_span"}}}, "then": {"required": ["source_offset_start", "source_offset_end", "supporting_span", "span_hash"]}},
+        {"if": {"properties": {"location_type": {"const": "page_title"}}}, "then": {"required": ["location"], "not": {"anyOf": [{"required": ["source_offset_start"]}, {"required": ["source_offset_end"]}, {"required": ["supporting_span"]}, {"required": ["span_hash"]}]}}},
+        {"if": {"properties": {"location_type": {"const": "page"}}}, "then": {"not": {"anyOf": [{"required": ["location"]}, {"required": ["source_offset_start"]}, {"required": ["source_offset_end"]}, {"required": ["supporting_span"]}, {"required": ["span_hash"]}]}}}
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "snapshot_hash", "claim_id", "review_version", "claim_type", "subject", "predicate", "qualifiers", "evidence"],
+      "properties": {
+        "snapshot_id": {"$ref": "#/$defs/hash"},
+        "snapshot_hash": {"$ref": "#/$defs/hash"},
+        "claim_id": {"$ref": "#/$defs/hash"},
+        "review_version": {"type": "integer", "minimum": 1},
+        "claim_type": {"enum": ["property", "relationship"]},
+        "subject": {"$ref": "#/$defs/entity"},
+        "predicate": {"type": "string", "minLength": 1},
+        "object": {"$ref": "#/$defs/entity"},
+        "value": {"type": "string"},
+        "qualifiers": {"type": "object"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"claim_type": {"const": "property"}}}, "then": {"required": ["value"], "not": {"required": ["object"]}}},
+        {"if": {"properties": {"claim_type": {"const": "relationship"}}}, "then": {"required": ["object"], "not": {"required": ["value"]}}}
+      ]
+    }
+  }
+}

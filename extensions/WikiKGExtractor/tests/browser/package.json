@@ -1,0 +1,10 @@
+{
+  "name": "wikikg-synthetic-browser-checks",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --config playwright.config.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

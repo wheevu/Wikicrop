@@ -1,0 +1,52 @@
+services:
+  wiki:
+    build:
+      context: ../..
+      dockerfile: demo/synthetic/wiki.dockerfile
+      args:
+        WIKIKG_UID: ${WIKIKG_UID:?run.py must set owner UID}
+        WIKIKG_GID: ${WIKIKG_GID:?run.py must set owner GID}
+    image: wikikg-synthetic-wiki:1.43.1-php8.3.14
+    environment:
+      MW_INSTALL_PATH: /var/www/html/w
+      DOCUMENT_ROOT: /var/www/html
+      MW_CONFIG_FILE: /private/wikikg/LocalSettings.synthetic.php
+      WIKIKG_SYNTHETIC: "1"
+      WIKIKG_SYNTHETIC_TEST: "0"
+      WIKIKG_HTTP_PORT: ${WIKIKG_HTTP_PORT:-8787}
+      PYTHONDONTWRITEBYTECODE: "1"
+      APACHE_RUN_USER: "#${WIKIKG_UID:?run.py must set owner UID}"
+      APACHE_RUN_GROUP: "#${WIKIKG_GID:?run.py must set owner GID}"
+    # Host access uses run.py serve, bound only to 127.0.0.1.
+    # Internal Docker ports are not reachable on every Docker Desktop host.
+    volumes:
+      - type: bind
+        source: ${WIKIKG_PRIVATE_ROOT:?run.py must set private root}
+        target: /private/wikikg
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../..
+        target: /var/www/html/w/extensions/WikiKGExtractor
+        read_only: true
+        bind:
+          create_host_path: false
+      # Host file sharing does not preserve inherited locks on Docker Desktop.
+      # Keep receipt state on a native Linux filesystem, retained on stop.
+      - type: volume
+        source: receipt-state
+        target: /private/wikikg/posix
+    networks: [synthetic]
+    read_only: true
+    tmpfs: [/tmp, /var/run/apache2, /var/lock/apache2]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    pids_limit: 128
+    mem_limit: 1g
+    restart: "no"
+networks:
+  synthetic:
+    internal: true
+volumes:
+  receipt-state:

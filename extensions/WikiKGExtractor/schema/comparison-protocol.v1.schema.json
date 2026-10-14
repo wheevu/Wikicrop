@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "comparison-protocol.v1.schema.json",
+  "title": "Bound offline comparison protocol declaration",
+  "type": "object",
+  "required": ["protocol_hash", "human_approved_frozen", "question_set_sha256", "hand_checked_split_hash", "shared_controls", "unanswered_counts_wrong"],
+  "properties": {
+    "protocol_hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "human_approved_frozen": {"type": "boolean"},
+    "question_set_sha256": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "hand_checked_split_hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "unanswered_counts_wrong": {"type": "boolean"},
+    "shared_controls": {
+      "type": "object",
+      "required": ["source_snapshot", "source_revision_digest", "model", "prompt_hash", "decoding", "context_budget", "audience", "common_controls"],
+      "properties": {
+        "source_snapshot": {"type": "string", "minLength": 1},
+        "source_revision_digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+        "model": {"type": "string", "minLength": 1},
+        "prompt_hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+        "decoding": {"type": "object"},
+        "context_budget": {"type": "integer", "minimum": 1},
+        "audience": {"type": "string", "minLength": 1},
+        "common_controls": {"type": "object"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wikicrop.local/schema/offline-question.v1.schema.json",
+  "title": "Private reviewer-only structured question input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "query"],
+  "properties": {
+    "version": {"const": "wikikg.offline-question.v1"},
+    "query": {"type": "object", "description": "Validated by reviewed-query.v2 before interpretation"},
+    "bindings": {
+      "type": "array", "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["type", "id", "name", "crop_id", "membership_snapshot_id", "membership_snapshot_hash", "source_page_ids"],
+        "properties": {
+          "type": {"const": "Variety"},
+          "id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "name": {"type": "string", "minLength": 1, "maxLength": 512},
+          "crop_id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "membership_snapshot_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "membership_snapshot_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "source_page_ids": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}}
+        }
+      }
+    },
+    "text_candidates": {
+      "type": "array", "maxItems": 100,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["page_id", "revision_id", "content_hash"],
+        "properties": {
+          "page_id": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+          "revision_id": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+          "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

@@ -42,6 +42,9 @@
 		var container = document.querySelector( '[data-wikikg-graph]' );
 		var wrapper;
 		var cy;
+		var evidencePanel;
+		var evidenceAside;
+		var hasEvidence;
 
 		if ( !graph || !container || typeof cytoscape !== 'function' ||
 			!Array.isArray( graph.nodes ) || graph.nodes.length === 0 ) {
@@ -51,10 +54,16 @@
 			return null;
 		}
 		container.dataset.wikikgReady = '1';
+		evidencePanel = document.querySelector( '[data-wikikg-edge-evidence]' );
+		evidenceAside = evidencePanel ? evidencePanel.closest( '.wikikg-edge-evidence' ) : null;
 		wrapper = container.closest( '.wikikg-graph-visual' );
 		if ( wrapper ) {
 			wrapper.hidden = false;
 		}
+		hasEvidence = ( graph.edges || [] ).some( function ( edge ) {
+			return edge.data && Array.isArray( edge.data.supporting_snapshot_ids ) &&
+				edge.data.supporting_snapshot_ids.length > 0;
+		} );
 
 		try {
 			cy = cytoscape( {
@@ -132,18 +141,123 @@
 					window.location.assign( href );
 				}
 			} );
+			cy.on( 'tap', 'edge', function ( event ) {
+				showEdgeEvidence(
+					evidencePanel,
+					event.target.data( 'supporting_snapshot_ids' ),
+					true
+				);
+			} );
+			cy.on( 'select', 'edge', function () {
+				updateSelectedEvidence( cy, evidencePanel );
+			} );
+			cy.on( 'unselect', 'edge', function () {
+				updateSelectedEvidence( cy, evidencePanel );
+			} );
+			cy.on( 'tap', function ( event ) {
+				if ( event.target === cy && evidencePanel ) {
+					updateSelectedEvidence( cy, evidencePanel );
+				}
+			} );
 			cy.on( 'resize', function () {
 				cy.fit( undefined, 24 );
 			} );
 			cy.fit( undefined, 24 );
+			if ( evidenceAside && hasEvidence ) {
+				showEdgeEvidence( evidencePanel, [] );
+				evidenceAside.hidden = false;
+			}
 			return cy;
 		} catch ( error ) {
 			container.dataset.wikikgReady = '0';
 			if ( wrapper ) {
 				wrapper.hidden = true;
 			}
+			if ( evidenceAside ) {
+				evidenceAside.hidden = true;
+			}
 			return null;
 		}
+	}
+
+	function updateSelectedEvidence( cy, panel ) {
+		var selected = cy.$( 'edge:selected' );
+		if ( selected.length ) {
+			showEdgeEvidence(
+				panel,
+				selected.last().data( 'supporting_snapshot_ids' ),
+				true
+			);
+		} else {
+			showEdgeEvidence( panel, [] );
+		}
+	}
+
+	function showEdgeEvidence( panel, snapshotIds, edgeSelected ) {
+		var list;
+		var found = 0;
+		var partialWarning;
+		if ( !panel ) {
+			return;
+		}
+		while ( panel.firstChild ) {
+			panel.removeChild( panel.firstChild );
+		}
+		if ( !Array.isArray( snapshotIds ) || snapshotIds.length === 0 ) {
+			panel.appendChild( document.createTextNode( edgeSelected
+				? panel.dataset.noSupportMessage || ''
+				: panel.dataset.selectMessage || '' ) );
+			return;
+		}
+		list = document.createElement( 'ul' );
+		snapshotIds.forEach( function ( snapshotId ) {
+			var row = Array.from( document.querySelectorAll( '[data-wikikg-snapshot-id]' ) )
+				.find( function ( candidate ) {
+					return candidate.dataset.wikikgSnapshotId === snapshotId;
+				} );
+			var cells;
+			var item;
+			var statement;
+			var links;
+			var claimLink;
+			if ( !row ) {
+				return;
+			}
+			cells = row.querySelectorAll( 'td' );
+			if ( cells.length < 6 ) {
+				return;
+			}
+			item = document.createElement( 'li' );
+			statement = document.createElement( 'p' );
+			statement.textContent = cells[ 0 ].textContent.trim() + ' - ' +
+				cells[ 1 ].textContent.trim() + ' - ' + cells[ 2 ].textContent.trim() +
+				( cells[ 3 ].textContent.trim() ? ' (' + cells[ 3 ].textContent.trim() + ')' : '' );
+			item.appendChild( statement );
+			claimLink = document.createElement( 'a' );
+			claimLink.href = '#' + row.id;
+			claimLink.textContent = panel.dataset.openClaimMessage || '';
+			item.appendChild( claimLink );
+			item.appendChild( document.createTextNode( ' ' ) );
+			links = row.querySelectorAll( 'td:nth-child(5) a, td:nth-child(6) a' );
+			links.forEach( function ( link ) {
+				item.appendChild( link.cloneNode( true ) );
+				item.appendChild( document.createTextNode( ' ' ) );
+			} );
+			list.appendChild( item );
+			found++;
+		} );
+		if ( found === 0 ) {
+			panel.appendChild( document.createTextNode(
+				panel.dataset.noSupportMessage || ''
+			) );
+			return;
+		}
+		if ( found < snapshotIds.length ) {
+			partialWarning = document.createElement( 'li' );
+			partialWarning.textContent = panel.dataset.partialSupportMessage || '';
+			list.appendChild( partialWarning );
+		}
+		panel.appendChild( list );
 	}
 
 	mw.wikikgGraph = {

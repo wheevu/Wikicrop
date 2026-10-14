@@ -193,20 +193,121 @@ class LocalWikiExtractorIntegrationTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( $unrelatedTitle, $errors[0]['title'] );
 	}
 
+	public function testPageCapCountsSuccessfulRootsAndResolvedVarietiesOnlyOnce() {
+		$firstCrop = 'Lúa kiểm thử cap A';
+		$secondCrop = 'Lúa kiểm thử cap B';
+		$firstVariety = 'Lúa kiểm thử cap giống A';
+		$secondVariety = 'Lúa kiểm thử cap giống B';
+		$this->editPage(
+			$firstCrop,
+			"{{InfoPlant1}}\n== Giống ==\n* [[{$firstVariety}]]"
+		);
+		$this->editPage(
+			$secondCrop,
+			"{{InfoPlant1}}\n== Giống ==\n* [[{$secondVariety}]]"
+		);
+		$this->editPage( $firstVariety, "{{InfoPlant1Giong}}\nNội dung giống A." );
+		$this->editPage( $secondVariety, "{{InfoPlant1Giong}}\nNội dung giống B." );
+
+		foreach ( [ 2, 3 ] as $limit ) {
+			$pages = $this->extractWithLimit( [ $firstCrop, $secondCrop ], $limit );
+			$successful = array_values( array_filter( $pages, static function ( $page ) {
+				return !empty( $page['text'] );
+			} ) );
+			$this->assertCount( $limit, $successful );
+			$this->assertSame(
+				$limit === 2 ? [ 'species', 'species' ] : [ 'species', 'species', 'variety' ],
+				array_column( $successful, 'kind' )
+			);
+			$this->assertContains(
+				'Đã đạt giới hạn số trang thu thập trong một lần chạy.',
+				array_column( $pages, 'error' )
+			);
+			$this->assertCount( count( $successful ), array_unique( array_column( $successful, 'page_id' ) ) );
+			$this->assertRawPagesAreValid( $successful );
+		}
+	}
+
+	public function testRedirectAliasesDeduplicateAndMergeCropProvenance() {
+		$firstCrop = 'Lúa kiểm thử alias A';
+		$aliasCrop = 'Lúa kiểm thử alias B';
+		$thirdCrop = 'Lúa kiểm thử alias C';
+		$rootAlias = 'Lúa kiểm thử alias gốc';
+		$linkedRootAlias = 'Lúa kiểm thử alias liên kết loài';
+		$canonical = 'Lúa kiểm thử alias giống';
+		$firstAlias = 'Lúa kiểm thử alias trực tiếp';
+		$secondAlias = 'Lúa kiểm thử alias khác';
+		$distinct = 'Lúa kiểm thử alias giống riêng';
+		$this->editPage(
+			$firstCrop,
+			"{{InfoPlant1}}\n== Giống ==\n* [[{$firstAlias}]]\n* [[{$linkedRootAlias}]]"
+		);
+		$this->editPage(
+			$aliasCrop,
+			"{{InfoPlant1}}\n== Giống ==\n* [[{$secondAlias}]]"
+		);
+		$this->editPage(
+			$thirdCrop,
+			"{{InfoPlant1}}\n== Giống ==\n* [[{$firstAlias}]]\n* [[{$canonical}]]\n* [[{$distinct}]]"
+		);
+		$this->editPage( $rootAlias, "#REDIRECT [[{$firstCrop}]]" );
+		$this->editPage( $linkedRootAlias, "#REDIRECT [[{$thirdCrop}]]" );
+		$this->editPage( $firstAlias, "#REDIRECT [[{$canonical}]]" );
+		$this->editPage( $secondAlias, "#REDIRECT [[{$canonical}]]" );
+		$this->editPage( $canonical, "{{InfoPlant1Giong}}\nNội dung giống chuẩn." );
+		$this->editPage( $distinct, "{{InfoPlant1Giong}}\nNội dung giống riêng." );
+
+		$pages = $this->extractWithLimit(
+			[ $firstCrop, $rootAlias, $aliasCrop, $thirdCrop ],
+			5
+		);
+		$successful = array_values( array_filter( $pages, static function ( $page ) {
+			return !empty( $page['text'] );
+		} ) );
+		$varieties = array_values( array_filter( $successful, static function ( $page ) {
+			return ( $page['kind'] ?? '' ) === 'variety';
+		} ) );
+		$this->assertSame( [ $canonical, $distinct ], array_column( $varieties, 'title' ) );
+		$this->assertSame( [ $firstCrop, $aliasCrop, $thirdCrop ], $varieties[0]['source_pages'] );
+		$this->assertSame( $firstAlias, $varieties[0]['requested_title'] );
+		$this->assertCount( count( $successful ), array_unique( array_column( $successful, 'page_id' ) ) );
+		$this->assertCount( 3, array_filter( $successful, static function ( $page ) {
+			return ( $page['kind'] ?? '' ) === 'species';
+		} ) );
+		$this->assertRawPagesAreValid( $successful );
+	}
+
 	/**
 	 * @param string $cropTitle
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function extract( $cropTitle ) {
+		return $this->extractWithLimit( [ $cropTitle ], 20 );
+	}
+
+	private function extractWithLimit( array $cropTitles, $limit ) {
 		$user = $this->getTestSysop()->getUser();
 		$extractor = new LocalWikiExtractor(
 			$this->getServiceContainer(),
 			$user,
 			[ NS_MAIN ],
-			20,
+			$limit,
 			250000
 		);
-		return $extractor->extract( [ $cropTitle ] );
+		return $extractor->extract( $cropTitles );
+	}
+
+	private function assertRawPagesAreValid( array $pages ) {
+		$validator = new \ReflectionMethod(
+			\MediaWiki\Extension\WikiKGExtractor\ClaimDocument::class,
+			'validateRawDocument'
+		);
+		$validator->setAccessible( true );
+		$validator->invoke( null, [
+			'schema_version' => '1.0',
+			'pages' => array_values( $pages ),
+			'page_count' => count( $pages )
+		] );
 	}
 
 	/**

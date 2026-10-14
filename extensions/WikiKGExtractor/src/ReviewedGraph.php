@@ -12,8 +12,8 @@ final class ReviewedGraph {
 	 * @param array<int,array<string,mixed>> $reviews Full, access-checked snapshots
 	 * @return array{
 	 *   document:array<string,mixed>,
-	 *   property_claims:array<int,array<string,string>>,
-	 *   relationship_claims:array<int,array<string,string>>
+	 *   property_claims:array<int,array<string,mixed>>,
+	 *   relationship_claims:array<int,array<string,mixed>>
 	 * }
 	 */
 	public static function build( array $reviews ): array {
@@ -59,6 +59,7 @@ final class ReviewedGraph {
 					'value' => $claim['value'],
 					'qualifiers' => self::qualifiersText( $claim['qualifiers'] ?? [] ),
 					'snapshot_id' => $snapshotId,
+					'source_evidence' => self::sourceEvidence( $claim['evidence'] ?? [] ),
 				];
 				continue;
 			}
@@ -87,7 +88,7 @@ final class ReviewedGraph {
 				'type' => $claim['predicate'],
 				'target' => $object['id'],
 				'target_type' => $object['type'],
-				'properties' => [],
+				'properties' => [ 'supporting_snapshot_ids' => [ $snapshotId ] ],
 			];
 			$relationshipClaims[] = [
 				'subject' => $subject['id'],
@@ -97,6 +98,7 @@ final class ReviewedGraph {
 				'object_type' => $object['type'],
 				'qualifiers' => self::qualifiersText( $claim['qualifiers'] ?? [] ),
 				'snapshot_id' => $snapshotId,
+				'source_evidence' => self::sourceEvidence( $claim['evidence'] ?? [] ),
 			];
 		}
 
@@ -160,5 +162,29 @@ final class ReviewedGraph {
 		}
 
 		return implode( '; ', $parts );
+	}
+
+	/** @param mixed $value @return array<int,array{page_title:string,revision_id:int}> */
+	private static function sourceEvidence( $value ): array {
+		if ( !is_array( $value ) ) {
+			return [];
+		}
+
+		$sources = [];
+		foreach ( array_slice( $value, 0, 20 ) as $evidence ) {
+			if ( !is_array( $evidence )
+				|| !is_string( $evidence['page_title'] ?? null )
+				|| trim( $evidence['page_title'] ) === ''
+				|| !is_numeric( $evidence['revision_id'] ?? null )
+				|| (int)$evidence['revision_id'] < 1
+			) {
+				continue;
+			}
+			$sources[] = [
+				'page_title' => $evidence['page_title'],
+				'revision_id' => (int)$evidence['revision_id'],
+			];
+		}
+		return $sources;
 	}
 }

@@ -231,8 +231,15 @@ class GraphDocument {
 		}
 
 		$edgeRows = '';
+		$hasReviewedEdges = false;
 		foreach ( $edges as $edge ) {
-			$edgeRows .= self::renderEdge( $edge, $nodeLinks );
+			if ( is_array( $edge ) && self::supportingSnapshotIds( $edge ) ) {
+				$hasReviewedEdges = true;
+				break;
+			}
+		}
+		foreach ( $edges as $edge ) {
+			$edgeRows .= self::renderEdge( $edge, $nodeLinks, $hasReviewedEdges );
 		}
 
 		$edgesHtml = Html::rawElement(
@@ -247,6 +254,9 @@ class GraphDocument {
 					Html::element( 'th', [], 'Nguồn' )
 						. Html::element( 'th', [], 'Quan hệ' )
 						. Html::element( 'th', [], 'Đích' )
+						. ( $hasReviewedEdges
+							? Html::element( 'th', [], wfMessage( 'wikikgreviewedgraph-edge-claims' )->text() )
+							: '' )
 					)
 				)
 				. Html::rawElement( 'tbody', [], $edgeRows )
@@ -277,6 +287,33 @@ class GraphDocument {
 							'Chọn một đường nối để xem tên quan hệ. '
 								. 'Dùng danh sách node và bảng bên dưới để đọc bằng bàn phím.'
 						)
+						. ( $hasReviewedEdges ? Html::rawElement(
+							'aside',
+							[ 'class' => 'wikikg-edge-evidence', 'aria-live' => 'polite', 'hidden' => true ],
+							Html::element(
+								'h6',
+								[],
+								wfMessage( 'wikikgreviewedgraph-edge-heading' )->text()
+							)
+								. Html::element( 'p', [ 'class' => 'wikikg-note' ],
+									wfMessage( 'wikikgreviewedgraph-edge-hint' )->text()
+								)
+								. Html::element( 'div', [
+									'data-wikikg-edge-evidence' => '1',
+									'data-select-message' => wfMessage(
+										'wikikgreviewedgraph-edge-select'
+									)->text(),
+									'data-no-support-message' => wfMessage(
+										'wikikgreviewedgraph-edge-no-support'
+									)->text(),
+									'data-partial-support-message' => wfMessage(
+										'wikikgreviewedgraph-edge-partial-support'
+									)->text(),
+									'data-open-claim-message' => wfMessage(
+										'wikikgreviewedgraph-edge-open-claim'
+									)->text(),
+								], '' )
+						) : '' )
 				)
 				. Html::element(
 					'h5',
@@ -348,13 +385,15 @@ class GraphDocument {
 				continue;
 			}
 			$type = (string)( $edge['type'] ?? 'RELATED_TO' );
+			$supportingSnapshotIds = self::supportingSnapshotIds( $edge );
 			$clientEdges[] = [
 				'data' => [
 					'id' => 'e-' . hash( 'sha256', $sourceKey . "\0" . $type
 						. "\0" . $targetKey . "\0" . $index ),
 					'source' => self::clientNodeId( $sourceKey ),
 					'target' => self::clientNodeId( $targetKey ),
-					'label' => self::edgeLabel( $type )
+					'label' => self::edgeLabel( $type ),
+					'supporting_snapshot_ids' => $supportingSnapshotIds
 				]
 			];
 			if ( count( $clientEdges ) >= self::MAX_RENDERED_EDGES ) {
@@ -367,6 +406,25 @@ class GraphDocument {
 			'nodes' => $clientNodes,
 			'edges' => $clientEdges
 		];
+	}
+
+	/** @param array<string,mixed> $edge @return string[] */
+	private static function supportingSnapshotIds( array $edge ): array {
+		$properties = is_array( $edge['properties'] ?? null ) ? $edge['properties'] : [];
+		$rawIds = $properties['supporting_snapshot_ids'] ?? [];
+		if ( !is_array( $rawIds ) ) {
+			return [];
+		}
+		$ids = [];
+		foreach ( array_slice( $rawIds, 0, 50 ) as $snapshotId ) {
+			if ( is_string( $snapshotId )
+				&& preg_match( '/^[a-f0-9]{64}$/D', $snapshotId )
+				&& !in_array( $snapshotId, $ids, true )
+			) {
+				$ids[] = $snapshotId;
+			}
+		}
+		return $ids;
 	}
 
 	/**
@@ -471,10 +529,15 @@ class GraphDocument {
 	 * @param array<string,mixed> $edge
 	 * @return string
 	 */
-	private static function renderEdge( array $edge, array $nodeLinks = [] ) {
+	private static function renderEdge(
+		array $edge,
+		array $nodeLinks = [],
+		bool $withEvidence = false
+	) {
 		$properties = is_array( $edge['properties'] ?? null )
 			? $edge['properties']
 			: [];
+		unset( $properties['supporting_snapshot_ids'] );
 		$rawType = trim( (string)( $edge['type'] ?? 'RELATED_TO' ) );
 		$type = self::edgeLabel( $rawType );
 		if ( $properties ) {
@@ -495,7 +558,27 @@ class GraphDocument {
 					[],
 					self::renderEndpointLink( $edge, 'target', $nodeLinks )
 				)
+				. ( $withEvidence
+					? Html::rawElement(
+						'td',
+						[],
+						self::renderClaimAnchors( self::supportingSnapshotIds( $edge ) )
+					)
+					: '' )
 		);
+	}
+
+	/** @param string[] $snapshotIds @return string */
+	private static function renderClaimAnchors( array $snapshotIds ) {
+		$links = [];
+		foreach ( $snapshotIds as $index => $snapshotId ) {
+			$links[] = Html::element(
+				'a',
+				[ 'href' => '#wikikg-reviewed-claim-' . $snapshotId ],
+				wfMessage( 'wikikgreviewedgraph-edge-claim-number', $index + 1 )->text()
+			);
+		}
+		return implode( ' ', $links );
 	}
 
 	/**

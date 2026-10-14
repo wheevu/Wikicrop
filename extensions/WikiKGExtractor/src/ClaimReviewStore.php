@@ -5,8 +5,8 @@ namespace MediaWiki\Extension\WikiKGExtractor;
 use InvalidArgumentException;
 use JsonException;
 use UnexpectedValueException;
-use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\IConnectionProvider;
+use Wikimedia\Rdbms\IDatabase;
 
 /**
  * Stores immutable, revision-pinned candidate snapshots and append-only decisions.
@@ -27,6 +27,7 @@ final class ClaimReviewStore {
 	private const MAX_SNAPSHOT_PAYLOAD_BYTES = 5242880;
 	private const MAX_OFFSET = 2147483647;
 	private const MAX_DB_UINT = 4294967295;
+	private const MAX_SNAPSHOT_ID_PAGE_SIZE = 1000;
 
 	private IConnectionProvider $connectionProvider;
 
@@ -69,7 +70,7 @@ final class ClaimReviewStore {
 						->insertInto( 'wikikg_snapshot' )
 						->row( $snapshot['row'] )
 						->ignore()
-						->caller( __METHOD__ )
+						->caller( __CLASS__ . '::importVerified' )
 						->execute();
 
 					if ( $db->affectedRows() !== 1 ) {
@@ -174,7 +175,7 @@ final class ClaimReviewStore {
 					->insertInto( 'wikikg_review_event' )
 					->row( $event )
 					->ignore()
-					->caller( __METHOD__ )
+					->caller( __CLASS__ . '::recordDecision' )
 					->execute();
 
 				// The unique (snapshot, version) key also arbitrates concurrent requests.
@@ -197,6 +198,21 @@ final class ClaimReviewStore {
 	 * @return array<string,mixed>|null
 	 */
 	public function getReview( string $snapshotId ): ?array {
+		return $this->getReviewRecord( $snapshotId, false );
+	}
+
+	/**
+	 * Read a snapshot while preserving JSON object shapes in its semantic fields.
+	 * This is used by JSON projections that must distinguish nested objects from lists.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	public function getReviewForProjection( string $snapshotId ): ?array {
+		return $this->getReviewRecord( $snapshotId, true );
+	}
+
+	/** @return array<string,mixed>|null */
+	private function getReviewRecord( string $snapshotId, bool $preserveSemanticObjects ): ?array {
 		$this->assertSnapshotId( $snapshotId );
 		// Review reads must reflect a write made earlier in the same request.
 		$dbr = $this->connectionProvider->getPrimaryDatabase();
@@ -242,7 +258,7 @@ final class ClaimReviewStore {
 			}
 			$sourcePages[] = $source;
 		}
-		$claimRow = $dbr->newSelectQueryBuilder()
+		$claimRows = $dbr->newSelectQueryBuilder()
 			->select( [
 				'wikikg_claim_id',
 				'wikikg_semantic_data',
@@ -250,14 +266,28 @@ final class ClaimReviewStore {
 			] )
 			->from( 'wikikg_claim' )
 			->where( [ 'wikikg_snapshot_id' => $snapshotId ] )
-			->fetchRow();
+			->limit( 2 )
+			->fetchResultSet();
+		$claimRow = null;
+		foreach ( $claimRows as $row ) {
+			if ( $claimRow !== null ) {
+				throw new UnexpectedValueException( 'Stored snapshot has multiple claims.' );
+			}
+			$claimRow = $row;
+		}
 		if ( !$claimRow ) {
 			throw new UnexpectedValueException( 'Stored snapshot has no claim.' );
 		}
 		$claimId = (string)$claimRow->wikikg_claim_id;
-		$claim = $this->decodeJson( $claimRow->wikikg_semantic_data );
+		$claim = $preserveSemanticObjects
+			? $this->decodeSemanticJson( $claimRow->wikikg_semantic_data )
+			: $this->decodeJson( $claimRow->wikikg_semantic_data );
+		$traceabilityComplete = $claimRow->wikikg_traceability_complete;
+		if ( !in_array( $traceabilityComplete, [ 0, 1, '0', '1', false, true ], true ) ) {
+			throw new UnexpectedValueException( 'Stored claim traceability flag is invalid.' );
+		}
 		$claim['claim_id'] = $claimId;
-		$claim['traceability_complete'] = (bool)$claimRow->wikikg_traceability_complete;
+		$claim['traceability_complete'] = (bool)$traceabilityComplete;
 		$claim['evidence'] = [];
 		$claim['review'] = [ 'status' => 'pending' ];
 
@@ -491,6 +521,44 @@ final class ClaimReviewStore {
 		return array_values( $snapshots );
 	}
 
+	/**
+	 * List snapshot IDs after an exclusive keyset cursor, in ascending ID order.
+	 *
+	 * Unlike listSnapshots(), this method has no offset ceiling and is suitable
+	 * for complete offline enumeration.
+	 *
+	 * @param string|null $afterId Exclusive cursor from the previous page
+	 * @param int $limit Maximum number of IDs to return in this page
+	 * @return string[]
+	 */
+	public function listSnapshotIdsAfter( ?string $afterId = null, int $limit = 100 ): array {
+		if ( $limit < 1 || $limit > self::MAX_SNAPSHOT_ID_PAGE_SIZE ) {
+			throw new InvalidArgumentException( 'Snapshot ID page size is out of bounds.' );
+		}
+		if ( $afterId !== null ) {
+			$this->assertSnapshotId( $afterId );
+		}
+
+		$dbr = $this->connectionProvider->getPrimaryDatabase();
+		$query = $dbr->newSelectQueryBuilder()
+			->select( [ 'wikikg_snapshot_id' ] )
+			->from( 'wikikg_snapshot' );
+		if ( $afterId !== null ) {
+			$query->where( $dbr->expr( 'wikikg_snapshot_id', '>', $afterId ) );
+		}
+
+		$ids = [];
+		foreach ( $query->orderBy( 'wikikg_snapshot_id', 'ASC' )
+			->limit( $limit )
+			->caller( __METHOD__ )
+			->fetchResultSet() as $row
+		) {
+			$ids[] = (string)$row->wikikg_snapshot_id;
+		}
+
+		return $ids;
+	}
+
 	/** @param IDatabase $db @param array<int,array<string,mixed>> $rows */
 	private function insertRows( IDatabase $db, string $table, array $rows ): void {
 		foreach ( $rows as $row ) {
@@ -502,8 +570,11 @@ final class ClaimReviewStore {
 		}
 	}
 
-	/** @param object $existing @param array<string,mixed> $snapshot */
-	private function assertSameSnapshot( $existing, array $snapshot ): void {
+	/**
+	 * @param \stdClass $existing
+	 * @param array<string,mixed> $snapshot
+	 */
+	private function assertSameSnapshot( \stdClass $existing, array $snapshot ): void {
 		if ( !hash_equals( (string)$existing->wikikg_snapshot_hash, $snapshot['hash'] ) ) {
 			throw new UnexpectedValueException(
 				'Snapshot ID collision: the same ID was submitted with different data.'
@@ -883,6 +954,11 @@ final class ClaimReviewStore {
 		];
 	}
 
+	/**
+	 * @param mixed $entity
+	 * @param string $label
+	 * @return array{type:string,id:string}
+	 */
 	private function validateEntity( $entity, string $label ): array {
 		if ( !is_array( $entity )
 			|| !in_array( $entity['type'] ?? null, [ 'Crop', 'Variety', 'Pest' ], true )
@@ -896,6 +972,11 @@ final class ClaimReviewStore {
 		];
 	}
 
+	/**
+	 * @param array<string,mixed> $value
+	 * @param string[] $allowed
+	 * @param string $label
+	 */
 	private function assertAllowedKeys( array $value, array $allowed, string $label ): void {
 		if ( array_diff( array_keys( $value ), $allowed ) ) {
 			throw new InvalidArgumentException( "$label contains unsupported fields." );
@@ -914,10 +995,16 @@ final class ClaimReviewStore {
 		return false;
 	}
 
+	/** @param string $snapshotId */
 	private function assertSnapshotId( string $snapshotId ): void {
 		$this->assertHash( $snapshotId, 'Snapshot ID' );
 	}
 
+	/**
+	 * @param mixed $value
+	 * @param string $label
+	 * @return string
+	 */
 	private function assertHash( $value, string $label ): string {
 		if ( !is_string( $value ) || !preg_match( '/^[a-f0-9]{64}$/D', $value ) ) {
 			throw new InvalidArgumentException( "$label must be a lowercase SHA-256 hex string." );
@@ -925,6 +1012,11 @@ final class ClaimReviewStore {
 		return $value;
 	}
 
+	/**
+	 * @param mixed $value
+	 * @param string $label
+	 * @return int
+	 */
 	private function assertPositiveInteger( $value, string $label ): int {
 		if ( !is_int( $value ) || $value < 1 || $value > self::MAX_DB_UINT ) {
 			throw new InvalidArgumentException( "$label is out of bounds." );
@@ -932,6 +1024,11 @@ final class ClaimReviewStore {
 		return $value;
 	}
 
+	/**
+	 * @param mixed $value
+	 * @param string $label
+	 * @return int
+	 */
 	private function assertOffset( $value, string $label ): int {
 		if ( !is_int( $value ) || $value < 0 || $value > self::MAX_OFFSET ) {
 			throw new InvalidArgumentException( "$label is out of bounds." );
@@ -939,6 +1036,13 @@ final class ClaimReviewStore {
 		return $value;
 	}
 
+	/**
+	 * @param mixed $value
+	 * @param string $label
+	 * @param int $maxBytes
+	 * @param bool $allowEmpty
+	 * @return string
+	 */
 	private function assertText(
 		$value,
 		string $label,
@@ -954,7 +1058,10 @@ final class ClaimReviewStore {
 		return $value;
 	}
 
-	/** @throws JsonException */
+	/**
+	 * @param mixed $value
+	 * @throws JsonException
+	 */
 	private function encodeJson( $value ): string {
 		return json_encode(
 			$value,
@@ -962,7 +1069,10 @@ final class ClaimReviewStore {
 		);
 	}
 
-	/** @throws JsonException */
+	/**
+	 * @param mixed $json
+	 * @throws JsonException
+	 */
 	private function decodeJson( $json ): array {
 		$value = json_decode( (string)$json, true, 512, JSON_THROW_ON_ERROR );
 		if ( !is_array( $value ) ) {
@@ -972,8 +1082,21 @@ final class ClaimReviewStore {
 	}
 
 	/**
+	 * @param mixed $json
+	 * @return array<string,mixed>
+	 */
+	private function decodeSemanticJson( $json ): array {
+		$value = json_decode( (string)$json, false, 512, JSON_THROW_ON_ERROR );
+		if ( !$value instanceof \stdClass ) {
+			throw new UnexpectedValueException( 'Stored semantic JSON value is not an object.' );
+		}
+		return get_object_vars( $value );
+	}
+
+	/**
 	 * Stable JSON used only for same-ID collision detection, not as the upstream snapshot-ID scheme.
 	 *
+	 * @param mixed $value
 	 * @throws JsonException
 	 */
 	private function canonicalJson( $value ): string {
@@ -1002,7 +1125,12 @@ final class ClaimReviewStore {
 		return $this->encodeJson( $value );
 	}
 
-	private function formatEvent( $row, ?string $snapshotId = null ): array {
+	/**
+	 * @param \stdClass $row
+	 * @param string|null $snapshotId
+	 * @return array<string,mixed>
+	 */
+	private function formatEvent( \stdClass $row, ?string $snapshotId = null ): array {
 		return [
 			'snapshot_id' => $snapshotId ?? (string)$row->wikikg_snapshot_id,
 			'version' => (int)$row->wikikg_version,
@@ -1013,7 +1141,10 @@ final class ClaimReviewStore {
 		];
 	}
 
-	/** @param array<int,array<string,mixed>> $events */
+	/**
+	 * @param string $snapshotId
+	 * @param array<int,array<string,mixed>> $events
+	 */
 	private function latestReviewFromEvents( string $snapshotId, array $events ): array {
 		if ( $events ) {
 			return $events[count( $events ) - 1];

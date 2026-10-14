@@ -1,6 +1,7 @@
 # Knowledge-graph thesis requirements check
 
-Status: 2026-09-24, work on `feat/wikikg-claim-review` after the `7dd1c982` claim-review commit.
+Status: 2026-09-26, work on `feat/wikikg-claim-review` after the `7dd1c982` claim-review commit.
+Correction on 2026-10-03: the graph-database row no longer lists a second-database comparison as required, after rechecking the brief's wording.
 Acceptance baseline: the supervisor's original 2026-2027 WikiCrop knowledge-graph topic brief, work items i-v, plus the 2026-08-05 email requiring WikiCrop data and display inside WikiCrop.
 The private originals live in `~/Study/Thesis/supervisor-materials/`.
 Later pilot and thesis plans set an order of work; they do not remove an original requirement without a confirmed scope change.
@@ -9,7 +10,7 @@ Later pilot and thesis plans set an order of work; they do not remove an origina
 | --- | --- | --- |
 | Agricultural ontology: entities, scalar properties, lineage and pest/disease relationships | Partial: the rules-only pilot models Crop, Variety, and Pest, with scalar claims and four graph edge types. | Check the ontology against representative WikiCrop sources; model evidence-backed lineage as traversable relationships and assess other brief examples. |
 | Extract entities, properties, and relations from WikiCrop text using NLP or an LLM | Partial: deterministic rules extract a bounded set of candidates; an optional Gemini path exists but has not been validated as the thesis method. | Evaluate extraction from unstructured text against an independent reference set, including misses, conflicts, and qualifiers. |
-| Choose, configure, load, and inspect a graph database | Partial: the legacy worker emits Cypher and offers a direct candidate-graph push, but review decisions do not drive a verified database projection. | Build and verify a repeatable graph-database load from reviewed claims; test source identity, changes, duplicates, and orphan nodes. |
+| Choose, configure, load, and inspect a graph database | Partial: an offline, synthetic-only reviewed projection exists as an uncommitted candidate that exports approved claims and loads a verified Neo4j generation, but it serves no users and the legacy provisional push stays disabled. | Finish independent review, load real reviewed data, and keep the projection rebuildable from MediaWiki. The brief asks to choose one system ("Lựa chọn, cài đặt và cấu hình... Khuyến nghị: Neo4j, GraphDB, hoặc ArangoDB"), so a second-database comparison is optional; backup and restore drills are hardening in the [codebase roadmap](knowledge-graph-codebase-roadmap.md). |
 | Integrate GraphRAG with WikiCrop's existing assistant | Not demonstrated in this worktree; `WikiChatbot` calls an external `/ask` endpoint whose backend has not been verified here. | Confirm the backend contract, implement graph retrieval and evidence-backed assistant answers, and demonstrate cross-reference questions. |
 | Evaluate cross-reference queries and assistant quality/performance before and after integration | Partial: the frozen rules-only pilot demonstrates reproducibility and traceability, not scientific accuracy. | Prepare independent annotations and question answers; compare the same questions before and after graph integration, with accuracy, evidence, abstention, and runtime recorded. |
 | Document and package WikiCrop deployment | Partial: there is a synthetic local demo and extension guidance, but no approved production deployment package. | Document installation, migrations, configuration, rebuild, rollback, versioned results, and privacy boundaries; validate on an isolated production-like setup before requesting deployment approval. |
@@ -17,4 +18,6 @@ Later pilot and thesis plans set an order of work; they do not remove an origina
 
 The companion SQLite change repairs an interrupted review-table installation.
 This is local hardening, not a substitute for the required graph database.
+The reviewed projection candidate recorded on 2026-09-26 is the first slice of the graph-database work item; it is uncommitted and awaits independent review.
+A same-day self-review found and fixed three loader defects in the activation switch, the unchanged reload path, and evidence-link verification.
 The frozen worker, evaluator, and held-out split remain untouched; held-out evaluation still requires explicit approval.

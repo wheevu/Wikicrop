@@ -128,6 +128,7 @@ class LocalWikiExtractor {
 
         // Trang loài (ví dụ "Lúa") luôn được lấy trước các trang giống.
         $speciesPages = [];
+        $speciesIds = [];
 
         foreach ( $sourceTitles as $sourceTitle ) {
             try {
@@ -156,6 +157,11 @@ class LocalWikiExtractor {
                     continue;
                 }
 
+                $resolvedSourceId = (int)$sourcePage['page_id'];
+                if ( isset( $speciesIds[$resolvedSourceId] ) ) {
+                    continue;
+                }
+
                 $speciesText = $this->htmlToText( $sourcePage['html'] );
                 if ( $speciesText !== '' ) {
                     if ( count( $speciesPages ) >= $this->maxCollectedPages ) {
@@ -177,6 +183,7 @@ class LocalWikiExtractor {
                         'revision_id' => $sourcePage['revision_id'],
                         'content_hash' => $sourcePage['content_hash']
                     ];
+                    $speciesIds[$resolvedSourceId] = true;
                 } else {
                     $errors[] = $this->errorPage(
                         $sourceTitle->getPrefixedText(),
@@ -202,16 +209,9 @@ class LocalWikiExtractor {
                     continue;
                 }
 
-                $limitReached = false;
                 foreach ( $linkedTitles as $linkedTitle ) {
                     $candidateKey = $linkedTitle->getPrefixedDBkey();
                     if ( !isset( $candidates[$candidateKey] ) ) {
-                        if ( count( $speciesPages ) + count( $candidates )
-                            >= $this->maxCollectedPages
-                        ) {
-                            $limitReached = true;
-                            break;
-                        }
                         $candidates[$candidateKey] = [
                             'title' => $linkedTitle,
                             'sources' => []
@@ -220,12 +220,6 @@ class LocalWikiExtractor {
                     $candidates[$candidateKey]['sources'][
                         $resolvedSourceTitle->getPrefixedText()
                     ] = true;
-                }
-                if ( $limitReached ) {
-                    $errors[] = $this->errorPage(
-                        $resolvedSourceTitle->getPrefixedText(),
-                        'Đã đạt giới hạn số trang thu thập trong một lần chạy.'
-                    );
                 }
             } catch ( Throwable $e ) {
                 $errors[] = $this->errorPage(
@@ -237,6 +231,8 @@ class LocalWikiExtractor {
         }
 
         $pages = $speciesPages;
+        $emittedIds = $speciesIds;
+        $varietyIndexes = [];
         foreach ( $candidates as $candidate ) {
             /** @var Title $varietyTitle */
             $varietyTitle = $candidate['title'];
@@ -254,6 +250,10 @@ class LocalWikiExtractor {
                 $sourceNames = array_keys( $candidate['sources'] );
                 /** @var Title $resolvedTitle */
                 $resolvedTitle = $page['title'];
+                $resolvedId = (int)$page['page_id'];
+                if ( isset( $speciesIds[$resolvedId] ) ) {
+                    continue;
+                }
                 if ( !$this->hasActiveTemplate(
                     $page['templates'],
                     self::VARIETY_TEMPLATES
@@ -279,6 +279,31 @@ class LocalWikiExtractor {
                     continue;
                 }
 
+                if ( isset( $emittedIds[$resolvedId] ) ) {
+                    // A root/candidate overlap remains a species; aliases of a
+                    // variety are represented by the first valid request.
+                    if ( isset( $varietyIndexes[$resolvedId] ) ) {
+                        $index = $varietyIndexes[$resolvedId];
+                        foreach ( $sourceNames as $sourceName ) {
+                            if ( !in_array(
+                                $sourceName,
+                                $pages[$index]['source_pages'],
+                                true
+                            ) ) {
+                                $pages[$index]['source_pages'][] = $sourceName;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if ( count( $pages ) >= $this->maxCollectedPages ) {
+                    $errors[] = $this->errorPage(
+                        $resolvedTitle->getPrefixedText(),
+                        'Đã đạt giới hạn số trang thu thập trong một lần chạy.'
+                    );
+                    continue;
+                }
+
                 $entry = [
                     'title' => $resolvedTitle->getPrefixedText(),
                     'url' => $resolvedTitle->getFullURL(),
@@ -300,6 +325,8 @@ class LocalWikiExtractor {
                 }
 
                 $pages[] = $entry;
+                $emittedIds[$resolvedId] = true;
+                $varietyIndexes[$resolvedId] = count( $pages ) - 1;
             } catch ( Throwable $e ) {
                 $errors[] = $this->errorPage(
                     $varietyTitle->getPrefixedText(),
@@ -307,6 +334,20 @@ class LocalWikiExtractor {
                     $varietyTitle->getFullURL()
                 );
             }
+        }
+
+        $sourceOrder = [];
+        foreach ( $speciesPages as $index => $speciesPage ) {
+            $sourceOrder[$speciesPage['title']] = $index;
+        }
+        foreach ( $varietyIndexes as $index ) {
+            $sourcePages = $pages[$index]['source_pages'];
+            usort( $sourcePages, static function ( $left, $right ) use ( $sourceOrder ) {
+                return ( $sourceOrder[$left] ?? PHP_INT_MAX )
+                    <=> ( $sourceOrder[$right] ?? PHP_INT_MAX );
+            } );
+            $pages[$index]['source_pages'] = $sourcePages;
+            $pages[$index]['crop'] = $sourcePages ? (string)$sourcePages[0] : '';
         }
 
         return array_merge( $pages, $errors );

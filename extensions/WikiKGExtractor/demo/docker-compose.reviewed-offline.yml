@@ -1,0 +1,66 @@
+# Standalone opt-in stack. Do not combine with the site's base Compose file.
+services:
+  graph:
+    profiles: [reviewed-offline]
+    mem_limit: 1g
+    pids_limit: 128
+    image: neo4j:2026.09.0@sha256:29efb5ebfb51ec75545a945bc3ac0bdfbeb6bc2686a8ae5053fe0f4dcc926441
+    environment:
+      NEO4J_AUTH: neo4j/${WIKIKG_NEO4J_PASSWORD:?Set an offline graph password}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "127.0.0.1:${WIKIKG_BOLT_PORT:-7689}:7687"
+    volumes:
+      - reviewed-graph:/data
+    networks: [offline]
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'echo > /dev/tcp/127.0.0.1/7687'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  tools:
+    profiles: [reviewed-offline]
+    mem_limit: 1g
+    pids_limit: 64
+    build:
+      context: ..
+      dockerfile: demo/reviewed-tools.dockerfile
+    user: "${WIKIKG_UID:?Set the private directory owner UID}:${WIKIKG_GID:?Set the private directory owner GID}"
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      WIKIKG_NEO4J_PASSWORD: ${WIKIKG_NEO4J_PASSWORD:?Set an offline graph password}
+    working_dir: /workspace
+    entrypoint: [python]
+    command: [extensions/WikiKGExtractor/tools/reviewed_projection.py, --help]
+    # Existing loader accepts loopback only. Share the graph's network namespace.
+    network_mode: service:graph
+    depends_on:
+      graph:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ..
+        target: /workspace/extensions/WikiKGExtractor
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WIKIKG_PRIVATE_ROOT:?Set an existing owner-only directory outside the checkout and web root}
+        target: /private/wikikg
+        bind:
+          create_host_path: false
+    tmpfs: [/tmp]
+
+networks:
+  offline:
+    internal: true
+
+volumes:
+  reviewed-graph:

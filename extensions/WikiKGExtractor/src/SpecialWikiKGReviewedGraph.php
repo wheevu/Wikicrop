@@ -116,7 +116,7 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 		return (int)$text;
 	}
 
-	/** @param array<int,array<string,string>> $claims */
+	/** @param array<int,array<string,mixed>> $claims */
 	private function renderPropertyClaims( array $claims ): string {
 		if ( !$claims ) {
 			return '';
@@ -126,12 +126,13 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 		foreach ( $claims as $claim ) {
 			$rows .= Html::rawElement(
 				'tr',
-				[],
+				[ 'id' => 'wikikg-reviewed-claim-' . $claim['snapshot_id'] ],
 				Html::element( 'td', [], $claim['subject_type'] . ': ' . $claim['subject'] )
 					. Html::element( 'td', [], $claim['predicate'] )
 					. Html::element( 'td', [], $claim['value'] )
 					. Html::element( 'td', [], $claim['qualifiers'] )
 					. Html::rawElement( 'td', [], $this->reviewLink( $claim['snapshot_id'] ) )
+					. Html::rawElement( 'td', [], $this->sourceRevisionLinks( $claim['source_evidence'] ?? [] ) )
 			);
 		}
 
@@ -145,10 +146,11 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 			'wikikgreviewedgraph-value',
 			'wikikgreviewedgraph-qualifiers',
 			'wikikgreviewedgraph-review',
+			'wikikgreviewedgraph-source',
 		], $rows );
 	}
 
-	/** @param array<int,array<string,string>> $claims */
+	/** @param array<int,array<string,mixed>> $claims */
 	private function renderRelationshipClaims( array $claims ): string {
 		if ( !$claims ) {
 			return '';
@@ -158,12 +160,14 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 		foreach ( $claims as $claim ) {
 			$rows .= Html::rawElement(
 				'tr',
-				[],
+				[ 'id' => 'wikikg-reviewed-claim-' . $claim['snapshot_id'],
+					'data-wikikg-snapshot-id' => $claim['snapshot_id'] ],
 				Html::element( 'td', [], $claim['subject_type'] . ': ' . $claim['subject'] )
 					. Html::element( 'td', [], $claim['predicate'] )
 					. Html::element( 'td', [], $claim['object_type'] . ': ' . $claim['object'] )
 					. Html::element( 'td', [], $claim['qualifiers'] )
 					. Html::rawElement( 'td', [], $this->reviewLink( $claim['snapshot_id'] ) )
+					. Html::rawElement( 'td', [], $this->sourceRevisionLinks( $claim['source_evidence'] ?? [] ) )
 			);
 		}
 
@@ -177,6 +181,7 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 			'wikikgreviewedgraph-object',
 			'wikikgreviewedgraph-qualifiers',
 			'wikikgreviewedgraph-review',
+			'wikikgreviewedgraph-source',
 		], $rows );
 	}
 
@@ -205,6 +210,29 @@ class SpecialWikiKGReviewedGraph extends SpecialPage {
 			[ 'href' => SpecialPage::getTitleFor( 'WikiKGReview', $snapshotId )->getLocalURL() ],
 			$this->msg( 'wikikgreviewedgraph-open-review' )->text()
 		);
+	}
+
+	/** @param mixed $sources */
+	private function sourceRevisionLinks( $sources ): string {
+		if ( !is_array( $sources ) ) {
+			return '';
+		}
+		$html = '';
+		foreach ( array_slice( $sources, 0, 20 ) as $source ) {
+			if ( !is_array( $source ) || !is_string( $source['page_title'] ?? null )
+				|| !is_int( $source['revision_id'] ?? null ) || $source['revision_id'] < 1
+			) {
+				continue;
+			}
+			$title = \Title::newFromText( $source['page_title'] );
+			if ( !$title ) {
+				continue;
+			}
+			$html .= ' ' . Html::element( 'a', [
+				'href' => $title->getLocalURL( [ 'oldid' => $source['revision_id'] ] ),
+			], $source['page_title'] . ' rev ' . $source['revision_id'] );
+		}
+		return $html;
 	}
 
 	private function renderNavigation( int $offset, bool $hasMore ): string {

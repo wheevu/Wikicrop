@@ -10,6 +10,21 @@ use MediaWikiIntegrationTestCase;
  * @covers \MediaWiki\Extension\WikiKGExtractor\GraphDocument
  */
 class GraphDocumentIntegrationTest extends MediaWikiIntegrationTestCase {
+	public function testReviewedEdgeLinksKeepExactUniqueSnapshotAnchors(): void {
+		$snapshot = str_repeat( 'a', 64 );
+		$document = [ 'schema_version' => '1.0', 'metadata' => [],
+			'nodes' => [ [ 'id' => 'Synthetic crop', 'type' => 'Crop', 'properties' => [] ],
+				[ 'id' => 'Synthetic variety', 'type' => 'Variety', 'properties' => [] ] ],
+			'edges' => [ [ 'source' => 'Synthetic crop', 'target' => 'Synthetic variety',
+				'source_type' => 'Crop', 'target_type' => 'Variety', 'type' => 'HAS_VARIETY',
+				'properties' => [ 'supporting_snapshot_ids' => [ $snapshot, $snapshot, '<script>' ] ] ] ] ];
+		$html = GraphDocument::render( $document );
+		$this->assertSame( 1, substr_count( $html, 'href="#wikikg-reviewed-claim-' . $snapshot . '"' ) );
+		$this->assertStringContainsString( 'data-wikikg-edge-evidence', $html );
+		$this->assertStringNotContainsString( '<script>', $html );
+		$this->assertSame( [ $snapshot ], GraphDocument::clientData( $document )['edges'][0]['data']['supporting_snapshot_ids'] );
+	}
+
 	public function testRevisionLinksArePinnedInSourcesNodesAndEdges() {
 		$document = [
 			'schema_version' => '1.0',
