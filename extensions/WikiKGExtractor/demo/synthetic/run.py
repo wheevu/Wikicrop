@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,18 @@ ERRORS = {
     "invalid_arguments": 2, "unsafe_private_root": 3, "not_fresh": 4,
     "invalid_manifest": 5, "compose_failed": 6, "not_setup": 7,
 }
+PRIVATE_IPV4_POOLS = tuple(ipaddress.ip_network(value) for value in
+                          ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def subnet_overlaps(configs, target: ipaddress.IPv4Network) -> bool:
+    for config in configs or []:
+        allocated = config.get("Subnet")
+        if allocated:
+            parsed = ipaddress.ip_network(allocated, strict=False)
+            if isinstance(parsed, ipaddress.IPv4Network) and parsed.overlaps(target):
+                return True
+    return False
 
 
 class Refusal(Exception):
@@ -99,10 +112,16 @@ def compose(root: Path, *args: str) -> None:
     if arguments and arguments[0] in ("run", "exec"):
         if "--user" not in arguments:
             arguments[1:1] = ["--user", f"{os.getuid()}:{os.getgid()}"]
+    command = ["docker", "compose", "--env-file", "/dev/null", "-p", project,
+               "-f", str(COMPOSE)]
+    override = root / "private-compose.yml"
+    if override.exists():
+        if not private_file(override):
+            raise Refusal("not_setup")
+        command.extend(("-f", str(override)))
     fd, log_name = tempfile.mkstemp(prefix="command-", suffix=".log", dir=root)
     with os.fdopen(fd, "wb") as log:
-        result = subprocess.run(["docker", "compose", "--env-file", "/dev/null", "-p", project,
-                                 "-f", str(COMPOSE), *arguments], cwd=REPO,
+        result = subprocess.run([*command, *arguments], cwd=REPO,
                                 env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
     if result.returncode:
         raise Refusal("compose_failed")
@@ -113,6 +132,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("action", choices=("setup", "start", "serve", "workflow", "test", "stop"))
     p.add_argument("--private-root", required=True, help="new owner-only directory outside checkout and web root")
     p.add_argument("--corpus-manifest", help="owner-only pinned corpus metadata input, required for setup")
+    p.add_argument("--subnet", help="optional unused private IPv4 /24 for this synthetic network (setup only)")
     p.add_argument("--synthetic-only", action="store_true", required=True, help="required safety acknowledgement")
     return p
 
@@ -121,6 +141,38 @@ def main() -> None:
     try:
         os.umask(0o077)
         args = parser().parse_args()
+        subnet = None
+        if args.subnet is not None:
+            if args.action != "setup":
+                raise Refusal("invalid_arguments")
+            try:
+                subnet = ipaddress.ip_network(args.subnet, strict=True)
+            except ValueError:
+                raise Refusal("invalid_arguments") from None
+            if (not isinstance(subnet, ipaddress.IPv4Network) or subnet.prefixlen != 24
+                    or not any(subnet.subnet_of(pool) for pool in PRIVATE_IPV4_POOLS)
+                    or str(subnet) != args.subnet):
+                raise Refusal("invalid_arguments")
+            # Validate daemon allocations before creating the private root or starting
+            # any build/setup command. Never change Docker's address pools.
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                   "HOME": str(Path.home()),
+                   "DOCKER_CONFIG": os.environ.get("DOCKER_CONFIG", str(Path.home() / ".docker"))}
+            try:
+                raw = subprocess.check_output(["docker", "network", "ls", "-q"], env=env,
+                                              stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                              timeout=15)
+                ids = raw.decode("ascii").split()
+                for network_id in ids:
+                    info = json.loads(subprocess.check_output(
+                        ["docker", "network", "inspect", network_id], env=env,
+                        stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15))[0]
+                    if subnet_overlaps((info.get("IPAM") or {}).get("Config"), subnet):
+                        raise Refusal("invalid_arguments")
+            except Refusal:
+                raise
+            except Exception:
+                raise Refusal("compose_failed") from None
         manifest = None
         if args.action == "setup":
             if not args.corpus_manifest:
@@ -154,6 +206,12 @@ def main() -> None:
                 os.chmod(root / name, 0o600)
             (root / ".compose-project").write_text("wikikg-synthetic-" + secrets.token_hex(8))
             os.chmod(root / ".compose-project", 0o600)
+            if subnet is not None:
+                (root / ".synthetic-subnet").write_text(str(subnet) + "\n")
+                os.chmod(root / ".synthetic-subnet", 0o600)
+                (root / "private-compose.yml").write_text(
+                    "networks:\n  synthetic:\n    ipam:\n      config:\n        - subnet: " + str(subnet) + "\n")
+                os.chmod(root / "private-compose.yml", 0o600)
             for name in ("db", "test-db", "installer-settings", "installer-test-settings",
                          "wiki-cache", "test-cache", "test-temp", "exports", "posix"):
                 (root / name).mkdir(mode=0o700)

@@ -7,6 +7,7 @@ import hashlib
 import json
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import jsonschema
@@ -775,66 +776,36 @@ class ReviewedQueryTests(unittest.TestCase):
         request = {"intent": "lookup", "entities": [{"type": "Variety", "id": "same-id", "crop_id": "crop-a"}]}
         self.assertEqual(self.query(source, request, bindings={})["status"], "unsupported")
 
-    def test_answer_query_isolates_callback_mutations_of_claims_request_bindings_and_text(self):
+    def test_answer_query_isolates_callback_mutations_of_claims_and_request(self):
         source = manifest([property_claim(1, "Crop", "crop-a", "height", "80 cm", page=11)])
         request = {"intent": "lookup", "purpose": "answer", "entities": [
             {"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]}
-        bindings = [{"type": "Crop", "id": "crop-a", "name": "Crop A"}]
-        text = [{"page_id": 11, "revision_id": 110, "content_hash": digest("text"),
-                 "page_title": "Source 11"}]
         seen = []
 
         def graph_authorizer(claims):
             claims[0]["value"] = "tampered"
             request["entities"][0]["id"] = "changed"
-            bindings[0]["name"] = "changed"
             return copy.deepcopy(source["claims"])
-
-        def text_authorizer(candidates):
-            candidates[0]["page_title"] = "tampered"
-            return [{**candidates[0], "text": "synthetic text"}]
 
         def generator(context):
             seen.append(json.loads(context))
             cid = seen[-1]["citation_catalog"][0]["id"]
             return {"status": "answer", "answer": "Synthetic.", "citation_ids": [cid]}
 
-        result = reviewed_query.answer_query(source, request, graph_authorizer, text_authorizer,
-                                             generator=generator, bindings=bindings,
-                                             text_candidates=text)
-        self.assertEqual(result["status"], "dependency_failure")
-        self.assertEqual(seen, [])
-        self.assertIsNone(result["query"])
-        self.assertIsNone(result["answer"])
-        self.assertEqual(result["citations"], [])
+        result = reviewed_query.answer_query(source, request, graph_authorizer,
+                                             generator=generator)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["claims"][0]["value"], "80 cm")
+        self.assertEqual(seen[0]["question"]["entities"][0]["id"], "crop-a")
         self.assertEqual(request["entities"][0]["id"], "changed")
-        self.assertEqual(bindings[0]["name"], "changed")
-        self.assertEqual(text[0]["page_title"], "Source 11")
-
-        text_only = [{"page_id": 11, "revision_id": 110, "content_hash": digest("text"),
-                      "page_title": "Source 11"}]
-        text_result = reviewed_query.answer_query(
-            source, {**request, "entities": [{"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]},
-            allow_all,
-            lambda candidates: (candidates[0].__setitem__("page_title", "tampered") or
-                                [{**candidates[0], "text": "synthetic text"}]),
-            generator=lambda _: self.fail("mutated text authorization input must not reach generation"),
-            text_candidates=text_only,
-        )
-        self.assertEqual(text_result["status"], "dependency_failure")
-        self.assertIsNone(text_result["query"])
-        self.assertIsNone(text_result["answer"])
-        self.assertEqual(text_result["citations"], [])
-        self.assertEqual(text_only[0]["page_title"], "Source 11")
 
         isolated_request = {"intent": "lookup", "purpose": "answer", "entities": [
             {"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]}
-        isolated_bindings = [{"type": "Crop", "id": "crop-a", "name": "Crop A"}]
         generated_contexts = []
 
         def mutate_caller_references(claims):
             isolated_request["entities"][0]["id"] = "outside-change"
-            isolated_bindings[0]["name"] = "outside-change"
             return copy.deepcopy(claims)
 
         def capture_context(context):
@@ -843,11 +814,119 @@ class ReviewedQueryTests(unittest.TestCase):
             return {"status": "answer", "answer": "Synthetic.", "citation_ids": [cid]}
 
         isolated = reviewed_query.answer_query(source, isolated_request, mutate_caller_references,
-                                               generator=capture_context, bindings=isolated_bindings)
+                                               generator=capture_context)
         self.assertEqual(isolated["status"], "ok")
         self.assertEqual(generated_contexts[0]["question"]["entities"][0]["id"], "crop-a")
         self.assertEqual(isolated_request["entities"][0]["id"], "outside-change")
-        self.assertEqual(isolated_bindings[0]["name"], "outside-change")
+
+    def test_variety_name_binding_isolation_preserves_query_and_answer(self):
+        membership = relationship_claim(1, "Crop", "crop-a", "HAS_VARIETY", "Variety", "v", page=11)
+        source = manifest([
+            membership,
+            property_claim(2, "Variety", "v", "ALIAS", "Synthetic variety", page=11),
+            property_claim(3, "Variety", "v", "height", "80 cm", page=11),
+        ])
+        request = {"intent": "lookup", "purpose": "answer", "entities": [
+            {"type": "Variety", "name": "Synthetic variety", "crop_id": "crop-a"}]}
+        binding = {
+            "type": "Variety", "id": "v", "name": "Synthetic variety", "crop_id": "crop-a",
+            "membership_snapshot_id": membership["snapshot_id"],
+            "membership_snapshot_hash": membership["snapshot_hash"],
+            "source_page_ids": [11],
+        }
+        self.assertEqual(self.query(source, request)["status"], "unsupported")
+        for api in ("query", "answer_query"):
+            for mutation in ("name", "source_page_ids"):
+                with self.subTest(api=api, mutation=mutation):
+                    bindings = [copy.deepcopy(binding)]
+                    generated = []
+
+                    def generator(context):
+                        generated.append(json.loads(context))
+                        return {"status": "answer", "answer": "Synthetic.",
+                                "citation_ids": [generated[-1]["citation_catalog"][0]["id"]]}
+
+                    def run(authorizer):
+                        if api == "query":
+                            return self.query(source, request, authorizer, bindings=bindings)
+                        return reviewed_query.answer_query(
+                            source, request, authorizer, generator=generator, bindings=bindings,
+                        )
+
+                    baseline = run(allow_all)
+                    self.assertEqual(baseline["status"], "ok")
+                    baseline_contexts = copy.deepcopy(generated)
+                    generated.clear()
+
+                    def mutate_binding(claims):
+                        if mutation == "name":
+                            bindings[0]["name"] = "changed"
+                        else:
+                            bindings[0]["source_page_ids"][:] = [22]
+                        return copy.deepcopy(claims)
+
+                    result = run(mutate_binding)
+                    self.assertEqual(bindings[0][mutation], "changed" if mutation == "name" else [22])
+                    self.assertEqual(result["status"], "ok")
+                    self.assertEqual(result, baseline)
+                    self.assertEqual(generated, baseline_contexts)
+                    if api == "answer_query":
+                        self.assertEqual(len(generated), 1)
+                        values = {claim.get("value") for claim in generated[0]["claims"]}
+                        self.assertIn("80 cm", values)
+
+    def test_answer_query_reaches_valid_text_authorization_and_rejects_identity_mutation(self):
+        source = manifest([property_claim(1, "Crop", "crop-a", "height", "80 cm", page=11)])
+        request = {"intent": "lookup", "purpose": "answer", "entities": [
+            {"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]}
+        source_text = "source-page-11"
+        text_ids = [{"page_id": 11, "revision_id": 110, "content_hash": digest(source_text)}]
+        calls, generated = [], []
+
+        def generator(context):
+            generated.append(json.loads(context))
+            return {"status": "answer", "answer": "Synthetic.",
+                    "citation_ids": [generated[-1]["citation_catalog"][0]["id"]]}
+
+        def text_authorizer(candidates):
+            calls.append(copy.deepcopy(candidates))
+            return [{**candidates[0], "text": source_text}]
+
+        result = reviewed_query.answer_query(
+            source, request, allow_all, text_authorizer, generator=generator,
+            text_candidates=text_ids,
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(calls, [text_ids, text_ids, text_ids])
+        self.assertEqual(len(generated), 1)
+        self.assertEqual(generated[0]["sources"][0]["text"], source_text)
+
+        for field, value, returned_text in [
+            ("page_id", 12, source_text),
+            ("revision_id", 111, source_text),
+            ("content_hash", digest("other synthetic text"), "other synthetic text"),
+        ]:
+            with self.subTest(field=field):
+                calls.clear()
+                generated.clear()
+                original_ids = copy.deepcopy(text_ids)
+
+                def mutate_identity(candidates):
+                    calls.append(copy.deepcopy(candidates))
+                    candidates[0][field] = value
+                    return [{**candidates[0], "text": returned_text}]
+
+                result = reviewed_query.answer_query(
+                    source, request, allow_all, mutate_identity, generator=generator,
+                    text_candidates=text_ids,
+                )
+                self.assertEqual(calls, [original_ids])
+                self.assertEqual(generated, [])
+                self.assertEqual(result["status"], "dependency_failure")
+                self.assertIsNone(result["query"])
+                self.assertIsNone(result["answer"])
+                self.assertEqual(result["citations"], [])
+                self.assertEqual(text_ids, original_ids)
 
     def test_answer_query_clears_all_payload_after_final_authorization_denial(self):
         source = manifest([property_claim(1, "Crop", "crop-a", "height", "80 cm", page=11)])
@@ -873,6 +952,43 @@ class ReviewedQueryTests(unittest.TestCase):
         self.assertIsNone(result["answer"])
         self.assertEqual(result["citations"], [])
 
+    def test_answer_query_exception_clears_query_and_citations_after_composition_failure(self):
+        source = manifest([property_claim(1, "Crop", "crop-a", "height", "80 cm", page=11)])
+        request = {"intent": "lookup", "purpose": "answer", "entities": [
+            {"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]}
+
+        # Query interpretation has already attached authorized query citations.
+        with mock.patch.object(assistant_contract, "compose_answer", side_effect=RuntimeError("synthetic failure")) as compose:
+            result = reviewed_query.answer_query(source, request, allow_all, generator=lambda _: None)
+        compose.assert_called_once()
+        self.assertEqual(result["status"], "blocked")
+        self.assertIsNone(result["query"])
+        self.assertIsNone(result["answer"])
+        self.assertEqual(result["citations"], [])
+        self.assertEqual(result["reasons"][0]["code"], "invalid_request")
+
+    def test_exception_after_composed_fields_are_attached_clears_all_payload(self):
+        source = manifest([property_claim(1, "Crop", "crop-a", "height", "80 cm", page=11)])
+        request = {"intent": "lookup", "purpose": "answer", "entities": [
+            {"type": "Crop", "id": "crop-a", "crop_id": "crop-a"}]}
+        class FaultyComposition(dict):
+            status_reads = 0
+            def get(self, key, default=None):
+                if key == "status":
+                    self.status_reads += 1
+                    if self.status_reads == 2:
+                        raise RuntimeError("synthetic late result failure")
+                return super().get(key, default)
+        composed = FaultyComposition(status="answer", answer="private generated bytes", citations=[{"private": True}])
+        with mock.patch.object(assistant_contract, "compose_answer", return_value=composed) as compose:
+            result = reviewed_query.answer_query(source, request, allow_all, generator=lambda _: None)
+        compose.assert_called_once()
+        self.assertEqual(composed.status_reads, 2)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIsNone(result["query"])
+        self.assertIsNone(result["answer"])
+        self.assertEqual(result["citations"], [])
+        self.assertNotIn("private", json.dumps(result))
 
     def test_total_evidence_limit_returns_truncated_without_payload(self):
         source = manifest([

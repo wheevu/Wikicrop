@@ -1,0 +1,62 @@
+services:
+  db:
+    image: mariadb@sha256:0d0945c57f75b3a3b9ebe71aedaaad005fa5305054e8fca3d2e42a8c92b43b5e
+    environment:
+      MARIADB_DATABASE: synthetic_mariadb
+      MARIADB_USER: wikikg_synthetic
+      MARIADB_PASSWORD_FILE: /private/wikikg/db-password
+      MARIADB_ROOT_PASSWORD_FILE: /private/wikikg/root-password
+    volumes:
+      - type: volume
+        source: database
+        target: /var/lib/mysql
+      - type: bind
+        source: ${WIKIKG_PRIVATE_ROOT:?private root required}
+        target: /private/wikikg
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [synthetic]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 45
+      start_period: 10s
+    mem_limit: 768m
+    pids_limit: 128
+    restart: "no"
+  wiki:
+    image: ${WIKIKG_WIKI_IMAGE:-wikikg-synthetic-wiki:1.43.1-php8.3.14}
+    user: "${WIKIKG_UID:?owner UID required}:${WIKIKG_GID:?owner GID required}"
+    environment:
+      MW_INSTALL_PATH: /var/www/html/w
+      MW_CONFIG_FILE: /private/wikikg/LocalSettings.synthetic.php
+      WIKIKG_SYNTHETIC: "1"
+      WIKIKG_DB_PASSWORD_FILE: /private/wikikg/db-password
+      WIKIKG_SYNTHETIC_ROOT: /private/wikikg
+    volumes:
+      - type: bind
+        source: ${WIKIKG_PRIVATE_ROOT:?private root required}
+        target: /private/wikikg
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../..
+        target: /var/www/html/w/extensions/WikiKGExtractor
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [synthetic]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 1g
+    pids_limit: 128
+    restart: "no"
+networks:
+  synthetic:
+    internal: true
+volumes:
+  database:

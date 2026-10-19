@@ -14,7 +14,7 @@ from pathlib import Path
 FORWARD = """
 import base64,http.client,json,sys
 r=json.load(sys.stdin)
-c=http.client.HTTPConnection('127.0.0.1',80,timeout=20)
+c=http.client.HTTPConnection('127.0.0.1',80,timeout=r['timeout'])
 c.request(r['method'],r['path'],body=base64.b64decode(r['body']),headers=r['headers'])
 s=c.getresponse(); body=s.read(8_000_001)
 if len(body)>8_000_000: raise ValueError('response_limit')
@@ -25,10 +25,12 @@ HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriz
                "te", "trailer", "transfer-encoding", "upgrade", "content-length"}
 
 
-def serve(root: Path, port: int) -> None:
+def serve(root: Path, port: int, *, request_timeout: int = 20) -> None:
     from run import private_file
 
     os.umask(0o077)
+    if type(request_timeout) is not int or not 1 <= request_timeout <= 60:
+        raise ValueError("synthetic_relay_refused")
     if not private_file(root / ".compose-project") or not private_file(root / "synthetic-marker"):
         raise ValueError("synthetic_relay_refused")
     project = (root / ".compose-project").read_text().strip()
@@ -62,7 +64,7 @@ def serve(root: Path, port: int) -> None:
 
     class Handler(BaseHTTPRequestHandler):
         def handle_request(self):
-            self.connection.settimeout(25)
+            self.connection.settimeout(request_timeout + 5)
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not self.path.startswith("/w/") or not 0 <= length <= 1_000_000 \
@@ -76,8 +78,10 @@ def serve(root: Path, port: int) -> None:
                     self.send_error(400)
                     return
                 payload = json.dumps({"method": self.command, "path": self.path, "headers": headers,
-                                      "body": base64.b64encode(body).decode()}).encode()
-                process = subprocess.run(command, input=payload, capture_output=True, env=env, timeout=30)
+                                      "body": base64.b64encode(body).decode(),
+                                      "timeout": request_timeout}).encode()
+                process = subprocess.run(command, input=payload, capture_output=True, env=env,
+                                         timeout=request_timeout + 10)
                 if process.returncode or len(process.stdout) > 12_000_000:
                     raise ValueError("relay_failure")
                 response = json.loads(process.stdout)
@@ -102,6 +106,7 @@ def serve(root: Path, port: int) -> None:
 
     server = HTTPServer(("127.0.0.1", port), Handler)
     resource = {"pid": os.getpid(), "container_id": ids[0], "url": f"http://127.0.0.1:{port}/w/",
+                "upstream_timeout_seconds": request_timeout,
                 "cleanup": "SIGTERM this owned relay PID; stop the wiki separately"}
     record = root / f"relay-{os.getpid()}.json"
     with record.open("x") as output:

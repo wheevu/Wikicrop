@@ -1033,6 +1033,7 @@ def answer_query(document, request, graph_authorizer, text_authorizer=None, gene
             output["reasons"] = [_reason("relationship_missing")]
         return output
     except Exception:
+        output.update(status="blocked", query=None, answer=None, citations=[])
         output["reasons"] = [{"code": "invalid_request", "message": "Request or authorized query could not be interpreted."}]
         return output
 

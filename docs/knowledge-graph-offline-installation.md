@@ -3,6 +3,7 @@
 This package runs the offline graph and Python tools without changing the site's base Compose file or routing the existing assistant to a new backend.
 It is opt-in and separate from ordinary WikiCrop installation.
 It does not install MediaWiki, grant permissions on a live wiki, or authorize deployment.
+For the separate disposable MediaWiki-plus-Neo4j question demonstration, use the [connected synthetic guide](knowledge-graph-connected-demo.md).
 The MediaWiki claim and review tables remain authoritative; Neo4j can be rebuilt from a new eligible export.
 Installation does not authorize schema migration, candidate import, claim decisions, or graph loading.
 Each is a separate state-changing operation that requires explicit intent and an authorized disposable environment.
@@ -125,8 +126,9 @@ docker compose --env-file /dev/null -p wikikg-reviewed-offline \
 ```
 
 Stopping retains the graph volume and private files.
-This package does not automate deletion, production cutover, backup/restore, or rollback of authoritative MediaWiki state.
-Those recovery drills remain separate hardening work.
+This graph package does not automate deletion, production cutover, backup/restore, or rollback of authoritative MediaWiki state.
+A separate [synthetic SQLite restore rehearsal](knowledge-graph-engineering-hardening.md#sqlite-backup-and-restore) exercises new disposable wikis only.
+Production recovery remains unverified.
 
 ## Verification status
 
@@ -143,4 +145,5 @@ Its [Docker introduction](https://neo4j.com/docs/operations-manual/current/docke
 These references were checked through Context7 on 2026-10-04.
 The isolated build, authenticated commands, idempotent loading, later-generation rebuild, and retired-generation refusal passed on Docker Desktop on that date.
 Those results do not verify the query, runner, offline command, or UI work dated 2026-10-08.
-Host-side Bolt access, production compatibility, and recovery drills remain unverified.
+Host-side Bolt access and production compatibility remain unverified.
+The separate hardening labs must report their dated SQLite and MariaDB results without extending these older graph results to production recovery.

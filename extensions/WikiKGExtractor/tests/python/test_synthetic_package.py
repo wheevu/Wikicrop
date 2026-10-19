@@ -24,6 +24,12 @@ RELAY_SPEC.loader.exec_module(relay)
 
 
 class SyntheticPackageTests(unittest.TestCase):
+    def test_subnet_overlap_ignores_null_ipam_and_ipv6_but_detects_ipv4(self):
+        target = lifecycle.ipaddress.ip_network("10.241.7.0/24")
+        self.assertFalse(lifecycle.subnet_overlaps(None, target))
+        self.assertFalse(lifecycle.subnet_overlaps([{"Subnet": "fd00::/64"}], target))
+        self.assertTrue(lifecycle.subnet_overlaps([{"Subnet": "10.241.0.0/16"}], target))
+
     def test_invalid_metadata_refuses_before_creating_runtime_or_building(self):
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory).resolve()
@@ -51,6 +57,38 @@ class SyntheticPackageTests(unittest.TestCase):
             for unsafe in (link, lifecycle.REPO, parent / ".." / "unexpected"):
                 with self.subTest(unsafe=str(unsafe)), self.assertRaises(lifecycle.Refusal):
                     lifecycle.safe_root(str(unsafe), fresh=True)
+
+    def test_subnet_requires_canonical_private_ipv4_24(self):
+        for subnet in ("10.241.7.0/24", "192.168.9.0/24", "172.16.8.0/24"):
+            with self.subTest(subnet=subnet):
+                parsed = lifecycle.ipaddress.ip_network(subnet, strict=True)
+                self.assertIsInstance(parsed, lifecycle.ipaddress.IPv4Network)
+                self.assertTrue(parsed.is_private)
+                self.assertEqual(parsed.prefixlen, 24)
+        for subnet in ("10.241.7.1/24", "10.241.7.0/23", "fd00::/24",
+                       "127.0.0.0/24", "169.254.10.0/24", "100.64.0.0/24"):
+            with self.subTest(subnet=subnet):
+                with self.assertRaises(ValueError):
+                    parsed = lifecycle.ipaddress.ip_network(subnet, strict=True)
+                    if (not isinstance(parsed, lifecycle.ipaddress.IPv4Network)
+                            or parsed.prefixlen != 24
+                            or not any(parsed.subnet_of(pool) for pool in lifecycle.PRIVATE_IPV4_POOLS)):
+                        raise ValueError("invalid subnet")
+
+    def test_private_compose_override_is_applied_without_secret_interpolation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            os.chmod(root, 0o700)
+            (root / ".compose-project").write_text("wikikg-synthetic-" + "a" * 16)
+            os.chmod(root / ".compose-project", 0o600)
+            (root / "private-compose.yml").write_text("networks:\n  synthetic:\n    ipam:\n      config:\n        - subnet: 10.241.7.0/24\n")
+            os.chmod(root / "private-compose.yml", 0o600)
+            with patch.object(lifecycle.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                lifecycle.compose(root, "ps")
+            command = run.call_args.args[0]
+            self.assertIn(str(root / "private-compose.yml"), command)
+            self.assertNotIn("password", " ".join(command).lower())
 
     def test_all_owned_package_files_exist(self):
         for name in ("wiki.dockerfile", "compose.yml", "run.py", "fixture.php",
