@@ -9,14 +9,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ROOT / "tools" / "offline_answer.py"
+sys.path.insert(0, str(ROOT / "tools"))
+import offline_answer
 
 
 def digest(value: str) -> str:
@@ -107,6 +111,55 @@ os.chmod(path, 0o600)
     def result(self) -> dict:
         return json.loads(self.output.read_text())
 
+    def test_write_new_removes_only_its_staging_after_success(self):
+        unrelated = self.private / ".question-write-unrelated"
+        unrelated.write_bytes(b"keep me")
+        os.chmod(unrelated, 0o600)
+        before = {p.name for p in self.private.iterdir()}
+        offline_answer._write_new(self.output, b"complete", 100, self.web)
+        self.assertEqual(self.output.read_bytes(), b"complete")
+        self.assertEqual({p.name for p in self.private.iterdir()}, before | {self.output.name})
+        self.assertEqual(unrelated.read_bytes(), b"keep me")
+        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o600)
+
+    def test_write_new_link_failure_retains_complete_staging_and_existing_target(self):
+        def conflicting_link(staging, target, **kwargs):
+            target.write_bytes(b"original")
+            raise FileExistsError
+        with mock.patch.object(offline_answer.os, "link", side_effect=conflicting_link):
+            with self.assertRaises(FileExistsError):
+                offline_answer._write_new(self.output, b"private complete bytes", 100, self.web)
+        self.assertEqual(self.output.read_bytes(), b"original")
+        staging = [p for p in self.private.glob(".question-write-*")]
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"private complete bytes")
+        self.assertEqual(stat.S_IMODE(staging[0].stat().st_mode), 0o600)
+
+    def test_write_new_interrupted_write_retains_recoverable_staging(self):
+        with mock.patch.object(offline_answer.os, "fsync", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                offline_answer._write_new(self.output, b"recoverable", 100, self.web)
+        self.assertFalse(self.output.exists())
+        staging = [p for p in self.private.glob(".question-write-*")]
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), b"recoverable")
+
+    def test_write_new_failed_install_directory_sync_retains_staging(self):
+        real_sync = offline_answer.os.fsync
+        calls = 0
+        def fail_directory_sync(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("synthetic directory sync failure")
+            real_sync(fd)
+        with mock.patch.object(offline_answer.os, "fsync", side_effect=fail_directory_sync):
+            with self.assertRaises(OSError):
+                offline_answer._write_new(self.output, b"recoverable", 100, self.web)
+        staging = list(self.private.glob(".question-write-*"))
+        self.assertEqual(len(staging), 1)
+        self.assertEqual(staging[0].read_bytes(), self.output.read_bytes())
+
     def test_default_command_returns_evidence_without_generation_and_rechecks_authority(self):
         process = self.invoke()
         self.assertEqual(process.returncode, 0, process.stderr + process.stdout)
@@ -188,6 +241,65 @@ os.chmod(path, 0o600)
         self.assertEqual(process.returncode, 2)
         self.assertEqual(self.result()["reasons"][0]["code"], "authorization_timeout")
         self.assertEqual(self.result()["citations"], [])
+
+    def test_graph_transport_reads_private_file_and_never_passes_password_as_argv(self):
+        from argparse import Namespace
+        password = self.private / "graph-password"
+        password.write_text("not-an-argv-secret\n")
+        os.chmod(password, 0o600)
+        args = Namespace(graph_uri="bolt://127.0.0.1:7687", graph_user="neo4j",
+                         graph_password_file=str(password), document_root=str(self.web))
+        driver = mock.Mock()
+        neo4j = mock.Mock(GraphDatabase=mock.Mock(driver=mock.Mock(return_value=driver)))
+        with mock.patch.dict(sys.modules, {"neo4j": neo4j, "neo4j_question_source": mock.Mock(
+                 QUERY_TIMEOUT=8, read_question_document=mock.Mock(return_value=({"claims": []}, "a" * 64, 4)))}):
+            _, returned_driver, document, token = offline_answer._graph_source(args, {}, deadline=10**12)
+        neo4j.GraphDatabase.driver.assert_called_once_with(args.graph_uri,
+            auth=("neo4j", "not-an-argv-secret"), connection_timeout=8)
+        self.assertIs(returned_driver, driver)
+        self.assertEqual(token, {"source": "neo4j", "generation": "a" * 64, "epoch": 4})
+        self.assertNotIn("not-an-argv-secret", repr(args))
+
+    def test_graph_transport_clears_failed_payload_and_closes_owned_driver(self):
+        from argparse import Namespace
+        password = self.private / "graph-password-failed"
+        password.write_text("secret")
+        os.chmod(password, 0o600)
+        args = Namespace(graph_uri="bolt://127.0.0.1:7687", graph_user="neo4j",
+                         graph_password_file=str(password), document_root=str(self.web))
+        driver = mock.Mock()
+        graph_module = mock.Mock(QUERY_TIMEOUT=8, read_question_document=mock.Mock(
+            side_effect=type("Failure", (ValueError,), {"code": "graph_corrupt"})()))
+        neo4j = mock.Mock(GraphDatabase=mock.Mock(driver=mock.Mock(return_value=driver)))
+        with mock.patch.dict(sys.modules, {"neo4j": neo4j, "neo4j_question_source": graph_module}):
+            with self.assertRaises(offline_answer.OfflineError) as error:
+                offline_answer._graph_source(args, {"claims": []}, deadline=10**12)
+        self.assertEqual(error.exception.code, "graph_corrupt")
+        driver.close.assert_called_once_with()
+        result = offline_answer._failure(error.exception.code)
+        self.assertIsNone(result["query"])
+        self.assertIsNone(result["answer"])
+        self.assertEqual(result["citations"], [])
+
+    def test_graph_flags_require_private_credentials_and_loopback_uri(self):
+        from argparse import Namespace
+        args = Namespace(graph_uri="bolt://example.com", graph_user="neo4j",
+                         graph_password_file=str(self.private / "absent"), document_root=str(self.web))
+        with self.assertRaises(offline_answer.OfflineError) as error:
+            offline_answer._graph_source(args, {}, deadline=10**12)
+        self.assertEqual(error.exception.code, "invalid_arguments")
+
+    def test_final_graph_identity_failure_clears_previous_answer_and_citations(self):
+        source = mock.Mock()
+        source.recheck_active.side_effect = type(
+            "GraphChanged", (ValueError,), {"code": "graph_generation_changed"})()
+        with self.assertRaises(offline_answer.OfflineError) as error:
+            offline_answer._recheck_graph(source, "a" * 64, 4, mock.Mock(), deadline=10**12)
+        result = offline_answer._failure(error.exception.code)
+        self.assertEqual(result["status"], "dependency_failure")
+        self.assertIsNone(result["query"])
+        self.assertIsNone(result["answer"])
+        self.assertEqual(result["citations"], [])
 
 
 if __name__ == "__main__":

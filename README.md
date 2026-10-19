@@ -1,6 +1,14 @@
 # WIKICROP - Hệ thống Wiki Nông Nghiệp
 **Wikicrop** là hệ thống quản lý tri thức nông nghiệp được xây dựng trên nền tảng MediaWiki, tích hợp các công nghệ Nông nghiệp 4.0.
 
+## Reviewed knowledge-graph tools
+
+The reviewed workflow is separate from the legacy installation below.
+The [connected synthetic demonstration](docs/knowledge-graph-connected-demo.md) combines MediaWiki evidence checks, Neo4j and structured questions in an isolated reviewer-only environment.
+It uses invented articles and evidence summaries, not an LLM or the production chatbot backend.
+See the [offline installation guide](docs/knowledge-graph-offline-installation.md) for the separate graph/tools package and the [hardening record](docs/knowledge-graph-engineering-hardening.md) for earlier dated checks.
+Real agricultural review, scientific evaluation and production deployment remain separate gates.
+
 ## Hướng dẫn Cài đặt (Installation Guide)
 Do cấu hình bảo mật, file cấu hình gốc không được đưa lên GitHub. Vui lòng làm theo các bước sau để chạy dự án trên máy của bạn (Môi trường khuyến nghị: **XAMPP** trên Windows).
 
@@ -76,5 +84,4 @@ MediaWiki is the result of global collaboration and cooperation. The CREDITS
 file lists technical contributors to the project. The COPYING file explains
 MediaWiki's copyright and license (GNU General Public License, version 2 or
 later). Many thanks to the Wikimedia community for testing and suggestions.
-
 

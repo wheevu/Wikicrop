@@ -146,6 +146,19 @@ Exit 3 denotes a blocked or incomplete interpretation; exit 2 denotes an input o
 Interruption returns 130 when handled by the command.
 Unknown arguments fail without an interactive prompt or an echo of their values.
 
+### Synthetic Neo4j source
+
+The [connected demonstration](knowledge-graph-connected-demo.md) adds an opt-in source for invented fixtures only.
+Supply `--graph-uri 'bolt://127.0.0.1:7687'` and `--graph-password-file '<private directory>/graph-password'` together with `--synthetic-only`.
+The optional `--graph-user` defaults to `neo4j`.
+Real-data mode refuses these graph flags.
+The selected manifest still binds generation identity and completeness; actual claims must come from Neo4j and match that binding exactly.
+Graph failure never falls back to manifest claims.
+The command preserves the existing response version and interpreter and adds `execution.graph` with the source, generation and activation epoch.
+It rechecks that token after fresh PHP authorization, before writing evidence.
+`graph_unavailable`, `graph_corrupt`, `graph_limit`, `graph_timeout` and `graph_generation_changed` are dependency failures with no query evidence or citations.
+This does not enable the external assistant backend or ordinary-reader access.
+
 ## Bounds and retained attempts
 
 Question and authorization identity requests are bounded to 64 KiB.

@@ -57,6 +57,7 @@ Real-data outputs and verification details containing source text must stay in o
 ## Installation route
 
 The [isolated installation guide](knowledge-graph-offline-installation.md) documents the separate graph/tools package.
+The [connected synthetic demonstration](knowledge-graph-connected-demo.md) adds a separate reviewer-only MediaWiki question page and a bounded Neo4j source; its own execution record states whether fresh verification has completed.
 It leaves the base Compose configuration and live assistant routes unchanged.
 The [eight-phase roadmap](knowledge-graph-codebase-roadmap.md) distinguishes code progress from the acceptance gates above.
 
@@ -133,23 +134,9 @@ The classification file maps exact page titles to `kind`, either `species` or `v
 It records a classification choice; it does not establish agricultural truth.
 Unclassified, unresolved, suppressed, and otherwise ineligible pages remain visible in the inventory.
 
-```bash
-php extensions/WikiKGExtractor/maintenance/discoverOfflineSources.php \
-    --actor='<existing reviewer>' --offline-only --audience=actor-only \
-    --manifest='<private pinned manifest path>' \
-    --classifications='<private classifications.json>' \
-    --document-root='<actual server document root>' \
-    --output-dir='<existing private discovery parent>'
-
-DOCUMENT_ROOT='<actual document root on this Python host>' \
-python extensions/WikiKGExtractor/tools/bounded_discovery.py \
-    --actor='<existing reviewer>' --offline-only --audience=actor-only \
-    --inventory='<private discovery run>/inventory.json' \
-    --corpus-manifest='<private pinned manifest path>' \
-    --output-dir='<private execution directory>'
-```
-
-The discovery receipt supplies `inventory_path` for the next command.
+Use the maintained [preparation, batch and summary commands](knowledge-graph-bounded-runner.md#cli).
+Preparation is metadata-only; content collection requires explicit selected page IDs and the expected metadata snapshot.
+Do not invoke the collector without either `--metadata-only` or the paired `--selected-pages` and `--expected-metadata` inputs.
 The Python executor verifies manifest, worker, protocol, inventory, and source hashes before running the unchanged rules-only worker.
 Its metadata-only exclusion policy resolves raw main-namespace redirects and excludes a terminal source and its entire alias group whenever any group identity is held out.
 It keeps crop-separated per-page jobs, validates paired output artifacts, and resumes only from receipts whose inputs, limits, states, and artifacts still match.

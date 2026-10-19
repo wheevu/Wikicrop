@@ -1,0 +1,70 @@
+services:
+  graph:
+    image: neo4j:2026.09.0@sha256:29efb5ebfb51ec75545a945bc3ac0bdfbeb6bc2686a8ae5053fe0f4dcc926441
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:?runner supplies graph credential only to this service}
+      WIKIKG_SYNTHETIC: "1"
+      NEO4J_server_default__listen__address: 0.0.0.0
+      WIKIKG_SYNTHETIC_OWNER: ${WIKIKG_QUESTIONS_ROOT:?runner supplies private root}
+    volumes:
+      - graph-data:/data
+      - type: bind
+        source: ${WIKIKG_QUESTIONS_ROOT:?runner supplies private root}/wiki/synthetic-marker
+        target: /private/wikikg/synthetic-marker
+        read_only: true
+    networks: [synthetic]
+    restart: "no"
+    mem_limit: 1g
+    pids_limit: 256
+    labels:
+      wikikg.synthetic.questions: "1"
+      wikikg.synthetic.owner: ${COMPOSE_PROJECT_NAME:?}
+
+  wiki:
+    image: ${WIKIKG_WIKI_IMAGE:?runner pins the locally built image by immutable image ID}
+    pull_policy: never
+    network_mode: service:graph
+    depends_on: [graph]
+    environment:
+      MW_INSTALL_PATH: /var/www/html/w
+      DOCUMENT_ROOT: /var/www/html
+      MW_CONFIG_FILE: /private/wikikg/LocalSettings.synthetic.php
+      WIKIKG_SYNTHETIC: "1"
+      WIKIKG_SYNTHETIC_TEST: "0"
+      WIKIKG_HTTP_PORT: ${WIKIKG_HTTP_PORT:-8787}
+      APACHE_RUN_USER: "#${WIKIKG_UID:?}"
+      APACHE_RUN_GROUP: "#${WIKIKG_GID:?}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - type: bind
+        source: ${WIKIKG_QUESTIONS_ROOT:?runner supplies private root}/wiki
+        target: /private/wikikg
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../..
+        target: /var/www/html/w/extensions/WikiKGExtractor
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: volume
+        source: receipt-state
+        target: /private/wikikg/posix
+    read_only: true
+    tmpfs: [/tmp, /var/run/apache2, /var/lock/apache2]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    pids_limit: 128
+    mem_limit: 1g
+    restart: "no"
+    labels:
+      wikikg.synthetic.questions: "1"
+      wikikg.synthetic.owner: ${COMPOSE_PROJECT_NAME:?}
+
+networks:
+  synthetic:
+    internal: true
+volumes:
+  graph-data:
+  receipt-state:

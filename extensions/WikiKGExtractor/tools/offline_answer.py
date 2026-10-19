@@ -60,6 +60,11 @@ REASONS = {
     "result_output_limit": "The private question result exceeds its output bound.",
     "private_write_failed": "The private result could not be installed. Use a new result path.",
     "interrupted": "The offline question was interrupted.",
+    "graph_unavailable": "The local graph could not be checked.",
+    "graph_corrupt": "The local graph generation is incomplete or inconsistent.",
+    "graph_generation_changed": "The active graph generation changed.",
+    "graph_timeout": "The local graph check exceeded its deadline.",
+    "graph_limit": "The local graph data exceeds its safety bound.",
 }
 
 
@@ -160,6 +165,12 @@ def _write_new(path: Path, raw: bytes, bound: int, web: Path) -> None:
         _private_directory(path.parent, web)
         _plain_path(path)
         os.link(staging, path, follow_symlinks=False)
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        staging.unlink()
         directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             os.fsync(directory_fd)
@@ -356,6 +367,48 @@ def _interrupted(signum, frame) -> None:
     raise KeyboardInterrupt
 
 
+def _graph_source(args: argparse.Namespace, document: dict[str, Any], *, deadline: float):
+    """Connect with a private credential and return graph-derived claims and token."""
+    if not args.graph_uri or not args.graph_password_file:
+        raise OfflineError("invalid_arguments")
+    try:
+        uri = projection.validate_local_bolt_uri(args.graph_uri)
+        if not args.graph_user or len(args.graph_user) > 128 or any(ord(c) < 32 for c in args.graph_user):
+            raise OfflineError("invalid_arguments")
+        password = _read_private(Path(args.graph_password_file), 4096, Path(args.document_root)).decode("utf-8").rstrip("\n")
+        if not password:
+            raise OfflineError("unsafe_private_path")
+        import neo4j_question_source as graph_source
+        from neo4j import GraphDatabase
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OfflineError("authorization_timeout")
+        driver = GraphDatabase.driver(uri, auth=(args.graph_user, password),
+                                      connection_timeout=min(graph_source.QUERY_TIMEOUT, remaining))
+        try:
+            graph_document, generation, epoch = graph_source.read_question_document(document, driver, deadline=deadline)
+            return graph_source, driver, graph_document, {"source": "neo4j", "generation": generation, "epoch": epoch}
+        except Exception:
+            driver.close()
+            raise
+    except OfflineError:
+        raise
+    except projection.ProjectionError as error:
+        raise OfflineError("invalid_arguments") from error
+    except Exception as error:
+        reason = getattr(error, "code", "graph_unavailable")
+        raise OfflineError(reason if reason in REASONS else "graph_unavailable") from error
+
+
+def _recheck_graph(source: Any, generation: str, epoch: int, driver: Any,
+                   *, deadline: float) -> None:
+    try:
+        source.recheck_active(generation, epoch, driver, deadline=deadline)
+    except Exception as error:
+        reason = getattr(error, "code", "graph_generation_changed")
+        raise OfflineError(reason if reason in REASONS else "graph_generation_changed") from error
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = Parser(description=__doc__, epilog=(
         "Example: offline_answer.py --manifest <private-reviewed.json> --request <private-question.json> "
@@ -373,6 +426,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=60, help="Whole-question deadline, 1-900 seconds")
     parser.add_argument("--wiki-base", default="http://127.0.0.1")
     parser.add_argument("--wiki-script-path", default="/w/index.php")
+    parser.add_argument("--graph-uri")
+    parser.add_argument("--graph-user", default="neo4j")
+    parser.add_argument("--graph-password-file")
     args = parser.parse_args(argv)
     result, output, web = None, None, None
     bridge = None
@@ -382,6 +438,10 @@ def main(argv: list[str] | None = None) -> int:
         if (os.name != "posix" or not hasattr(os, "geteuid") or not hasattr(os, "O_NOFOLLOW")
                 or not 1 <= args.timeout <= 900 or not args.actor.strip() or len(args.actor) > 255
                 or any(ord(c) < 32 for c in args.actor)):
+            raise OfflineError("invalid_arguments")
+        graph_mode = args.graph_uri is not None or args.graph_password_file is not None
+        if graph_mode and (not args.synthetic_only or not args.offline_only or args.audience != "actor-only"
+                           or not args.graph_uri or not args.graph_password_file or args.corpus_manifest):
             raise OfflineError("invalid_arguments")
         try:
             require_owned_group_support()
@@ -428,6 +488,11 @@ def main(argv: list[str] | None = None) -> int:
                                 private_root=output.parent, watermark=document["source_watermark"],
                                 corpus_manifest=corpus, synthetic=args.synthetic_only,
                                 deadline=begun + args.timeout)
+        graph_driver = None
+        graph_info = None
+        if graph_mode:
+            graph_source, graph_driver, document, graph_info = _graph_source(
+                args, document, deadline=begun + args.timeout)
         import reviewed_query
         result = reviewed_query.answer_query(
             document, request["query"], bridge.graph_authorizer, bridge.text_authorizer,
@@ -437,9 +502,14 @@ def main(argv: list[str] | None = None) -> int:
             raise OfflineError(bridge.failure)
         if time.monotonic() >= begun + args.timeout:
             raise OfflineError("authorization_timeout")
+        if graph_driver is not None:
+            _recheck_graph(graph_source, graph_info["generation"], graph_info["epoch"],
+                           graph_driver, deadline=begun + args.timeout)
         result["execution"] = {"mode": "reviewer-evidence-only", "generated": False,
                                "authorization_calls": bridge.calls,
                                "elapsed_seconds": round(time.monotonic() - begun, 3)}
+        if graph_info is not None:
+            result["execution"]["graph"] = graph_info
         interpreted = result.get("query") or {}
         if any(item.get("code") == "invalid_request" for item in interpreted.get("reasons", [])):
             raise OfflineError("invalid_request")
@@ -453,6 +523,12 @@ def main(argv: list[str] | None = None) -> int:
         result, code = _failure("runtime_missing"), 2
     except Exception:
         result, code = _failure("runtime_failure"), 2
+    finally:
+        if 'graph_driver' in locals() and graph_driver is not None:
+            try:
+                graph_driver.close()
+            except Exception:
+                pass
     written = False
     if output is not None and web is not None:
         try:

@@ -1,0 +1,1462 @@
+{
+  "version": "wikikg.synthetic-question-scenarios.v1",
+  "scenarios": [
+    {
+      "id": "supported-compound",
+      "label": "Demo Alpha: a short-duration variety with a parent and pest resistance",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Alpha",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 0,
+        "status": "ok",
+        "query_state": "complete",
+        "reason": null,
+        "required_claim_labels": [
+          "alpha-membership",
+          "alpha-duration",
+          "alpha-parent",
+          "parent-membership",
+          "alpha-resistance"
+        ],
+        "forbidden_claim_labels": []
+      }
+    },
+    {
+      "id": "split-roots",
+      "label": "Reject branches assembled from different root varieties",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Split Left",
+            "crop_id": "Demo crop A"
+          },
+          {
+            "type": "Variety",
+            "id": "Demo Split Right",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "relationship_missing",
+        "required_claim_labels": [
+          "split-left-membership",
+          "split-left-duration",
+          "split-left-parent",
+          "split-right-membership",
+          "beta-resistance"
+        ],
+        "forbidden_claim_labels": []
+      }
+    },
+    {
+      "id": "cross-crop",
+      "label": "Keep an identically named parent in another crop separate",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Shared",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "relationship_missing",
+        "required_claim_labels": [
+          "shared-a-membership",
+          "shared-duration",
+          "shared-parent"
+        ],
+        "forbidden_claim_labels": [
+          "shared-b-membership",
+          "shared-resistance"
+        ]
+      }
+    },
+    {
+      "id": "unresolved-parent",
+      "label": "Do not traverse an unresolved parent link",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Unresolved",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "unresolved_identity",
+        "required_claim_labels": [
+          "unresolved-membership",
+          "unresolved-duration",
+          "alpha-parent-unresolved",
+          "unresolved-resistance"
+        ],
+        "forbidden_claim_labels": [
+          "alpha-parent"
+        ]
+      }
+    },
+    {
+      "id": "numeric-uncertain",
+      "label": "An interval spanning the 100-day threshold is uncertain",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Range",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "numeric_uncertain",
+        "required_claim_labels": [
+          "range-membership",
+          "alpha-duration-95-105",
+          "range-parent",
+          "range-resistance"
+        ],
+        "forbidden_claim_labels": [
+          "alpha-duration"
+        ]
+      }
+    },
+    {
+      "id": "scope-unknown",
+      "label": "Require exact applicability qualifiers on every branch",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Scope",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "scope_unknown",
+        "required_claim_labels": [
+          "scope-membership",
+          "scope-duration",
+          "scope-parent",
+          "alpha-resistance-unscoped"
+        ],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      }
+    },
+    {
+      "id": "opposing-claims",
+      "label": "Surface same-scope resistance and susceptibility together",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Opposition",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "opposing_assertions",
+        "required_claim_labels": [
+          "opposition-membership",
+          "opposition-duration",
+          "opposition-parent",
+          "opposition-resistance",
+          "alpha-susceptibility"
+        ],
+        "forbidden_claim_labels": []
+      }
+    },
+    {
+      "id": "missing-relationship",
+      "label": "A missing relationship cannot be inferred",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Missing",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 3,
+        "status": "unsupported",
+        "query_state": "incomplete",
+        "reason": "relationship_missing",
+        "required_claim_labels": [
+          "missing-membership",
+          "missing-duration",
+          "missing-parent"
+        ],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      }
+    },
+    {
+      "id": "partial-manifest",
+      "label": "Refuse an incomplete reviewed export",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Alpha",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 2,
+        "status": "dependency_failure",
+        "query_state": "partial",
+        "reason": "graph_generation_changed",
+        "required_claim_labels": [],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      },
+      "mutation": "partial-manifest"
+    },
+    {
+      "id": "rejected-claim",
+      "label": "Refuse after a required claim is rejected",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Alpha",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 2,
+        "status": "dependency_failure",
+        "query_state": "refused",
+        "reason": "export_watermark_changed",
+        "required_claim_labels": [
+          "alpha-membership",
+          "alpha-duration",
+          "alpha-parent",
+          "parent-membership",
+          "alpha-resistance"
+        ],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      },
+      "mutation": "rejected-claim"
+    },
+    {
+      "id": "source-changed",
+      "label": "Refuse when a selected source revision changes",
+      "query": {
+        "intent": "filter",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Changed",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "filters": [
+          {
+            "predicate": "plant_height",
+            "op": "=",
+            "value": "84 cm"
+          }
+        ]
+      },
+      "expected": {
+        "exit": 2,
+        "status": "dependency_failure",
+        "query_state": "refused",
+        "reason": "source_revision_changed",
+        "required_claim_labels": [],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      },
+      "mutation": "source-changed"
+    },
+    {
+      "id": "permission-loss",
+      "label": "Refuse after reviewer permission is removed",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Alpha",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 2,
+        "status": "dependency_failure",
+        "query_state": "refused",
+        "reason": "offline_authorization_refused",
+        "required_claim_labels": [],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      },
+      "mutation": "permission-loss"
+    },
+    {
+      "id": "graph-unavailable",
+      "label": "Refuse without graph data when Neo4j is unavailable",
+      "query": {
+        "intent": "conjunction",
+        "purpose": "answer",
+        "entities": [
+          {
+            "type": "Variety",
+            "id": "Demo Alpha",
+            "crop_id": "Demo crop A"
+          }
+        ],
+        "qualifiers": {
+          "season": "Đông Xuân",
+          "condition": "irrigated"
+        },
+        "filters": [
+          {
+            "predicate": "growth_duration",
+            "op": "<",
+            "value": "100 days"
+          }
+        ],
+        "branches": [
+          {
+            "path": [
+              "HAS_PARENT"
+            ],
+            "target": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            }
+          },
+          {
+            "path": [
+              "RESISTANT_TO"
+            ],
+            "target": {
+              "type": "Pest",
+              "id": "Demo pest"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "exit": 2,
+        "status": "dependency_failure",
+        "query_state": "refused",
+        "reason": "graph_unavailable",
+        "required_claim_labels": [],
+        "forbidden_claim_labels": [
+          "alpha-resistance"
+        ]
+      },
+      "mutation": "graph-unavailable"
+    }
+  ],
+  "fixtures": {
+    "articles": [
+      {
+        "key": "alpha",
+        "title": "Connected synthetic Demo Alpha",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Alpha. Demo Alpha growth_duration 92 days. Demo Alpha HAS_PARENT Demo Parent. Demo Alpha RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "alpha-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Alpha"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Alpha."
+          },
+          {
+            "label": "alpha-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Alpha"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Alpha growth_duration 92 days."
+          },
+          {
+            "label": "alpha-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Alpha"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Alpha HAS_PARENT Demo Parent."
+          },
+          {
+            "label": "alpha-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Alpha"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Alpha RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "parent",
+        "title": "Connected synthetic Demo Parent",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Parent.",
+        "claims": [
+          {
+            "label": "parent-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Parent."
+          }
+        ]
+      },
+      {
+        "key": "split-left",
+        "title": "Connected synthetic Split Left",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Split Left. Demo Split Left growth_duration 90 days. Demo Split Left HAS_PARENT Demo Parent.",
+        "claims": [
+          {
+            "label": "split-left-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Split Left"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Split Left."
+          },
+          {
+            "label": "split-left-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Split Left"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "90 days",
+            "span": "Demo Split Left growth_duration 90 days."
+          },
+          {
+            "label": "split-left-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Split Left"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Split Left HAS_PARENT Demo Parent."
+          }
+        ]
+      },
+      {
+        "key": "split-right",
+        "title": "Connected synthetic Split Right",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Split Right. Demo Split Right RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "split-right-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Split Right"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Split Right."
+          },
+          {
+            "label": "beta-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Split Right"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Split Right RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "shared-a",
+        "title": "Connected synthetic Shared crop A",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Shared. Demo Shared growth_duration 92 days. Demo Shared HAS_PARENT Demo Parent.",
+        "claims": [
+          {
+            "label": "shared-a-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Shared"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Shared."
+          },
+          {
+            "label": "shared-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Shared"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Shared growth_duration 92 days."
+          },
+          {
+            "label": "shared-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Shared"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Shared HAS_PARENT Demo Parent."
+          }
+        ]
+      },
+      {
+        "key": "shared-b",
+        "title": "Connected synthetic Shared crop B",
+        "text": "Synthetic evidence. Demo crop B HAS_VARIETY Demo Shared. Demo Shared RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "shared-b-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop B"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Shared"
+            },
+            "span": "Demo crop B HAS_VARIETY Demo Shared."
+          },
+          {
+            "label": "shared-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Shared"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Shared RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "unresolved",
+        "title": "Connected synthetic Unresolved",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Unresolved. Demo Unresolved growth_duration 92 days. Demo Unresolved HAS_PARENT Demo Parent. Demo Unresolved RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "unresolved-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Unresolved"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Unresolved."
+          },
+          {
+            "label": "unresolved-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Unresolved"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Unresolved growth_duration 92 days."
+          },
+          {
+            "label": "alpha-parent-unresolved",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Unresolved"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": false
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Unresolved HAS_PARENT Demo Parent."
+          },
+          {
+            "label": "unresolved-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Unresolved"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Unresolved RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "range",
+        "title": "Connected synthetic Range",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Range. Demo Range growth_duration 95-105 days. Demo Range HAS_PARENT Demo Parent. Demo Range RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "range-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Range"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Range."
+          },
+          {
+            "label": "alpha-duration-95-105",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Range"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "95-105 days",
+            "span": "Demo Range growth_duration 95-105 days."
+          },
+          {
+            "label": "range-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Range"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Range HAS_PARENT Demo Parent."
+          },
+          {
+            "label": "range-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Range"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Range RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "scope",
+        "title": "Connected synthetic Scope",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Scope. Demo Scope growth_duration 92 days. Demo Scope HAS_PARENT Demo Parent. Demo Scope RESISTANT_TO Demo pest.",
+        "claims": [
+          {
+            "label": "scope-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Scope"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Scope."
+          },
+          {
+            "label": "scope-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Scope"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Scope growth_duration 92 days."
+          },
+          {
+            "label": "scope-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Scope"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Scope HAS_PARENT Demo Parent."
+          },
+          {
+            "label": "alpha-resistance-unscoped",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Scope"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Scope RESISTANT_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "opposition",
+        "title": "Connected synthetic Opposition",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Opposition. Demo Opposition growth_duration 92 days. Demo Opposition HAS_PARENT Demo Parent. Demo Opposition RESISTANT_TO Demo pest. Demo Opposition SUSCEPTIBLE_TO Demo pest.",
+        "claims": [
+          {
+            "label": "opposition-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Opposition"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Opposition."
+          },
+          {
+            "label": "opposition-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Opposition"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Opposition growth_duration 92 days."
+          },
+          {
+            "label": "opposition-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Opposition"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Opposition HAS_PARENT Demo Parent."
+          },
+          {
+            "label": "opposition-resistance",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Opposition"
+            },
+            "predicate": "RESISTANT_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Opposition RESISTANT_TO Demo pest."
+          },
+          {
+            "label": "alpha-susceptibility",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Opposition"
+            },
+            "predicate": "SUSCEPTIBLE_TO",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "object": {
+              "type": "Pest",
+              "id": "Demo pest"
+            },
+            "span": "Demo Opposition SUSCEPTIBLE_TO Demo pest."
+          }
+        ]
+      },
+      {
+        "key": "missing",
+        "title": "Connected synthetic Missing",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Missing. Demo Missing growth_duration 92 days. Demo Missing HAS_PARENT Demo Parent.",
+        "claims": [
+          {
+            "label": "missing-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Missing"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Missing."
+          },
+          {
+            "label": "missing-duration",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Missing"
+            },
+            "predicate": "growth_duration",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated"
+            },
+            "value": "92 days",
+            "span": "Demo Missing growth_duration 92 days."
+          },
+          {
+            "label": "missing-parent",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Missing"
+            },
+            "predicate": "HAS_PARENT",
+            "qualifiers": {
+              "season": "Đông Xuân",
+              "condition": "irrigated",
+              "resolved": true
+            },
+            "object": {
+              "type": "Variety",
+              "id": "Demo Parent"
+            },
+            "span": "Demo Missing HAS_PARENT Demo Parent."
+          }
+        ]
+      },
+      {
+        "key": "changed",
+        "title": "Connected synthetic Changed",
+        "text": "Synthetic evidence. Demo crop A HAS_VARIETY Demo Changed. Demo Changed plant_height 84 cm.",
+        "claims": [
+          {
+            "label": "source-change-membership",
+            "claim_type": "relationship",
+            "subject": {
+              "type": "Crop",
+              "id": "Demo crop A"
+            },
+            "predicate": "HAS_VARIETY",
+            "qualifiers": {},
+            "object": {
+              "type": "Variety",
+              "id": "Demo Changed"
+            },
+            "span": "Demo crop A HAS_VARIETY Demo Changed."
+          },
+          {
+            "label": "source-change-target",
+            "claim_type": "property",
+            "subject": {
+              "type": "Variety",
+              "id": "Demo Changed"
+            },
+            "predicate": "plant_height",
+            "qualifiers": {},
+            "value": "84 cm",
+            "span": "Demo Changed plant_height 84 cm."
+          }
+        ]
+      }
+    ],
+    "counts": {
+      "direct_claims": 37,
+      "unique_sources": 12,
+      "evidence_entries": 37,
+      "frozen_claims": 9,
+      "generation_claims": 46
+    }
+  }
+}

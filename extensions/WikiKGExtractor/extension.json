@@ -21,7 +21,8 @@
   "SpecialPages": {
     "WikiKGExtractor": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGExtractor",
     "WikiKGReview": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReview",
-    "WikiKGReviewedGraph": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReviewedGraph"
+    "WikiKGReviewedGraph": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGReviewedGraph",
+    "WikiKGSyntheticQuestions": "MediaWiki\\Extension\\WikiKGExtractor\\SpecialWikiKGSyntheticQuestions"
   },
   "ExtensionMessagesFiles": {
     "WikiKGExtractorAlias": "WikiKGExtractor.alias.php"
@@ -45,6 +46,11 @@
     "remoteExtPath": "WikiKGExtractor/resources"
   },
   "ResourceModules": {
+    "ext.wikikg.questions.styles": {
+      "styles": [
+        "wikikg.questions.css"
+      ]
+    },
     "ext.wikikg.styles": {
       "styles": [
         "wikikg.css"
@@ -88,6 +94,14 @@
     }
   },
   "config": {
+    "WikiKGSyntheticQuestionsEnabled": {
+      "value": false,
+      "description": "Enable the reviewer-only connected question demonstration, guarded separately to a disposable synthetic SQLite wiki. Not a production assistant."
+    },
+    "WikiKGSyntheticQuestionsDirectory": {
+      "value": "",
+      "description": "Owner-private connected demonstration directory outside the checkout and document root. Empty disables the demonstration."
+    },
     "WikiKGExtractorLocalNamespaces": {
       "value": [
         0

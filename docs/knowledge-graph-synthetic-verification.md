@@ -3,6 +3,11 @@
 This package builds a disposable MediaWiki 1.43.1 runtime and drives the existing bounded extraction, review, export, and offline-question paths against synthetic fixtures.
 It is software verification only, not a scientific or production evaluation.
 
+The separate [hardening labs](knowledge-graph-engineering-hardening.md) cover SQLite backup/restore, MariaDB claim-store compatibility, and WikiChatbot inside real MediaWiki with a local fixture endpoint.
+They require new private roots and do not replace the workflow below or authorize real-data review.
+For the separate connected question page, use the [MediaWiki-plus-Neo4j demonstration](knowledge-graph-connected-demo.md).
+Its mutating verification consumes its fixture state, so do not run it against a root intended for the earlier workflow's browser steps.
+
 ## Requirements
 
 Use Docker with Compose v2, Python 3.10 or newer, and Node/npm on the host.
